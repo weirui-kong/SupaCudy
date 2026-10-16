@@ -78,4 +78,31 @@ rpcd
 
 ## 前端
 
-前端源码将放在 `web/`，编译产物输出到 `packages/supacudy-ui/htdocs/`。在那之前，`htdocs/` 里是一个手写的占位页面，用来验证"登录 → 调用 supacudy.info"这条链路。
+源码在 `web/`：Svelte 5 + TypeScript，Vite 构建，编译产物输出到 `packages/supacudy-ui/htdocs/`（不入库，`build-packages.sh` 会先构建它）。
+
+```bash
+cd web
+npm ci                     # 第一次
+npm run dev                # 开发服务器，/ubus 代理到 http://localhost:8080
+npm test                   # svelte-check 类型检查 + 单元测试
+npm run build              # 只构建前端
+```
+
+开发服务器默认把 API 请求代理到 `scripts/smoke-test.sh --keep` 启动的容器（登录密码 `supacudy-test`）。要连真机，设置 `SUPACUDY_TARGET=http://192.168.1.1 npm run dev`。
+
+目录约定：
+
+| 路径 | 内容 |
+|---|---|
+| `src/lib/api.ts` | 唯一和路由器通信的模块：会话、错误映射、每个接口的类型化封装 |
+| `src/lib/i18n/` | `en.ts` 是词条的唯一来源，`zh-CN.ts` 必须同形（类型保证），`t()` 取词条 |
+| `src/lib/theme.svelte.ts` | 系统 / 亮色 / 暗色偏好，存在 localStorage |
+| `src/lib/router.svelte.ts` | hash 路由和导航项 |
+| `src/styles/tokens.css` | 设计令牌（颜色、间距、圆角、字号），亮暗两套 |
+| `src/components/` | 通用组件：Card、Banner、InfoTip、DataRow、Meter、Segmented、Icon |
+| `src/layout/Shell.svelte` | 桌面侧边栏 / 手机底部导航 |
+| `src/pages/` | 每个页面一个组件 |
+| `tests/unit/` | Vitest 单元测试 |
+| `tests/e2e/` | Playwright 测试，由 `scripts/test-e2e.sh` 对着容器运行 |
+
+新增一个页面：在 `router.svelte.ts` 的 `ROUTES` 加一项，在 `App.svelte` 里挂上组件，en / zh-CN 两边加词条，补单元测试和 e2e 测试（e2e 至少调用一次 `expectPageQuality()`）。

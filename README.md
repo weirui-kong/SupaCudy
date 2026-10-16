@@ -4,7 +4,7 @@
 
 SupaCudy 不是任何厂商固件的移植或修改版。底层是原版 OpenWrt，上面只加我们自己写的三个软件包；LuCI 原样保留，作为"高级设置"入口。
 
-> 状态：**骨架阶段**。目前只有打包流程和一个用于验证链路的占位页面，还不能日常使用。路线图见 [docs/roadmap.md](docs/roadmap.md)。
+> 状态：**阶段 1 进行中**。前端框架、登录、概览和设置页已完成，上网、无线、客户端等功能还在开发，暂不适合日常使用。路线图见 [docs/roadmap.md](docs/roadmap.md)。
 
 ## 支持的设备
 
@@ -17,7 +17,7 @@ SupaCudy 不是任何厂商固件的移植或修改版。底层是原版 OpenWrt
 
 ## 快速开始
 
-需要 Docker（macOS 上用 Docker Desktop 即可）和 shellcheck。
+需要 Docker（macOS 上用 Docker Desktop 即可）、Node.js 24 和 shellcheck。
 
 ```bash
 # 0. 启用 pre-push 钩子，跑一遍全部测试
@@ -53,7 +53,7 @@ packages/             OpenWrt feed，三个软件包：
   supacudy-base/        首次启动配置、版本信息、各功能的胶水脚本
   supacudy-rpcd/        ucode 写的 rpcd 插件和权限配置，对前端提供 API
   supacudy-ui/          编译好的前端静态文件，安装到 /www/supacudy
-web/                  前端源码（待建，编译产物输出到 packages/supacudy-ui/htdocs）
+web/                  前端源码（Svelte + TypeScript），编译产物输出到 packages/supacudy-ui/htdocs
 patches/              预留：万一要改 OpenWrt 本身，以补丁形式放这里
 scripts/              Docker 打包、测试入口和开发部署脚本
 tests/                按类别分的测试用例（lint、build 等）

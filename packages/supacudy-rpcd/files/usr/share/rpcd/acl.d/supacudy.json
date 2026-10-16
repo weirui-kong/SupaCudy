@@ -4,8 +4,7 @@
 		"read": {
 			"ubus": {
 				"session": [ "destroy" ],
-				"supacudy": [ "info" ],
-				"system": [ "board", "info" ]
+				"supacudy": [ "info", "status" ]
 			}
 		},
 		"write": {}

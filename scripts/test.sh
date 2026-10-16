@@ -36,20 +36,21 @@ skip() {
 
 run lint lint "$ROOT/tests/lint/check-shell.sh"
 
+web_deps() { (cd "$ROOT/web" && { [ -d node_modules ] || npm ci --no-audit --no-fund; }); }
+run web-deps web-deps web_deps
+run web-unit web-unit npm --prefix "$ROOT/web" test
+
 # Every test category below needs freshly built packages.
 run build-packages build-packages "$ROOT/scripts/build-packages.sh"
 
 if [ "$FAILED" = 0 ]; then
-	run build build-tests "$ROOT/tests/build/check-packages.sh"
-	run api   api-tests   "$ROOT/scripts/smoke-test.sh"
-fi
-
-if [ -f "$ROOT/web/package.json" ]; then
-	run web-unit web-unit npm --prefix "$ROOT/web" test
-	run web-e2e  web-e2e  npm --prefix "$ROOT/web" run test:e2e
+	run build   build-tests "$ROOT/tests/build/check-packages.sh"
+	run api     api-tests   "$ROOT/scripts/smoke-test.sh"
+	run web-e2e web-e2e     "$ROOT/scripts/test-e2e.sh"
 else
-	skip web-unit "front-end not set up yet"
-	skip web-e2e  "front-end not set up yet"
+	skip build   "packages did not build"
+	skip api     "packages did not build"
+	skip web-e2e "packages did not build"
 fi
 
 echo

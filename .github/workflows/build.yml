@@ -12,6 +12,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
       - name: Run all tests
         run: scripts/test.sh
 
@@ -19,7 +25,9 @@ jobs:
         if: always()
         with:
           name: test-logs
-          path: out/test-logs/
+          path: |
+            out/test-logs/
+            web/playwright-report/
 
   image:
     needs: test
@@ -30,6 +38,12 @@ jobs:
         profile: [cudy-tr3000-v1, cudy-tr3000-256mb-v1]
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
 
       - name: Build packages
         run: scripts/build-packages.sh

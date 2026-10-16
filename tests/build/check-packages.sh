@@ -93,6 +93,16 @@ check "rpcd: ACL is valid and matches plugin methods${acl_check:+ ($acl_check)}"
 check "ui: depends on supacudy-rpcd"   depends_on supacudy-ui supacudy-rpcd
 check "ui: depends on uhttpd-mod-ubus" depends_on supacudy-ui uhttpd-mod-ubus
 check "ui: ships /www/supacudy/index.html" has_file supacudy-ui www/supacudy/index.html
+ui_root="$WORK/supacudy-ui/data/www/supacudy"
+check "ui: ships a JavaScript bundle" bash -c "ls '$ui_root'/assets/*.js >/dev/null 2>&1"
+check "ui: ships a stylesheet" bash -c "ls '$ui_root'/assets/*.css >/dev/null 2>&1"
+check "ui: index.html references assets relatively (served under /supacudy/)" \
+	bash -c "grep -q 'src=\"./assets/' '$ui_root/index.html' && ! grep -q 'src=\"/assets/' '$ui_root/index.html'"
+check "ui: no source maps or stray files" \
+	bash -c "[ -z \"\$(find '$ui_root' -name '*.map' -o -name '.DS_Store' -o -name '._*')\" ]"
+ui_gzip_bytes="$(find "$ui_root" -type f -exec gzip -9c {} \; | wc -c | tr -d ' ')"
+check "ui: gzipped size within the 300 KB budget (got $((ui_gzip_bytes / 1024)) KB)" \
+	test "$ui_gzip_bytes" -le $((300 * 1024))
 
 for dir in "$ROOT"/packages/*/; do
 	name="$(basename "$dir")"

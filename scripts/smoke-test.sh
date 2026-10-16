@@ -60,6 +60,8 @@ docker exec -e PASSWORD="$PASSWORD" "$NAME" sh -euc '
 
 	opkg update >/dev/null
 	opkg install /supacudy/*.ipk >/dev/null
+	# A syntax error would otherwise only show up as "Object not found".
+	ucode -c -o /dev/null /usr/share/rpcd/ucode/supacudy.uc
 	printf "%s\n%s\n" "$PASSWORD" "$PASSWORD" | passwd root >/dev/null
 
 	# No procd in the container: start the daemons by hand.
@@ -109,6 +111,21 @@ INFO="$(rpc "$SESSION" supacudy info)"
 echo "    $INFO"
 echo "$INFO" | grep -q "\"openwrt\":\"$OPENWRT_VERSION\"" || fail "unexpected supacudy.info result"
 echo "$INFO" | grep -q '"version":"0\.' || fail "SupaCudy version missing"
+
+echo "==> supacudy.status"
+STATUS="$(rpc "$SESSION" supacudy status)"
+echo "    $STATUS"
+echo "$STATUS" | grep -qE '"uptime":[0-9]+' || fail "status has no uptime"
+echo "$STATUS" | grep -qE '"load":\[[0-9.]+,[0-9.]+,[0-9.]+\]' || fail "status has no load averages"
+echo "$STATUS" | grep -qE '"cpus":[1-9]' || fail "status has no CPU count"
+echo "$STATUS" | grep -qE '"total":[1-9][0-9]+' || fail "status has no memory total"
+echo "$STATUS" | grep -qE '"available":[0-9]+' || fail "status has no available memory"
+
+echo "==> supacudy.status rejects undeclared arguments as invalid"
+rpc "$SESSION" supacudy status '{"bogus":1}' | grep -q '"result":\[2\]' || fail "status accepted undeclared arguments"
+
+echo "==> supacudy.status without a session is denied"
+rpc "$ANON" supacudy status | denied || fail "anonymous status call was allowed"
 
 echo "==> supacudy.info without a session is denied"
 rpc "$ANON" supacudy info | denied || fail "anonymous call was allowed"

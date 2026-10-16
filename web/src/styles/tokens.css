@@ -1,0 +1,118 @@
+/*
+ * Copyright 2026 SupaCudy contributors
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * Design tokens. Components use only these variables; no literal colors.
+ * Text/background pairs are chosen to meet WCAG AA (4.5:1) in both themes,
+ * which the e2e axe checks enforce.
+ */
+
+:root {
+  --color-bg: #f3f4f6;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f7f8fa;
+  --color-border: #dde1e7;
+  --color-text: #1b1f27;
+  --color-text-muted: #545c69;
+  --color-accent: #1f56c9;
+  --color-accent-hover: #1a48a8;
+  --color-accent-soft: #e6eefc;
+  --color-on-accent: #ffffff;
+  --color-danger: #b42318;
+  --color-danger-soft: #fdecea;
+  --color-warning: #8a5300;
+  --color-warning-soft: #fff4e0;
+  --color-success: #1c7a3a;
+  --color-success-soft: #e5f5ea;
+  --color-info-soft: #eaf1fd;
+  --color-nav-bg: #ffffff;
+  --color-nav-active-bg: #e6eefc;
+  --color-nav-active-text: #1a48a8;
+  --color-focus: #1f56c9;
+  --color-shadow: rgb(16 24 40 / 8%);
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-full: 999px;
+
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --font-size-xs: 12px;
+  --font-size-sm: 14px;
+  --font-size-md: 16px;
+  --font-size-lg: 18px;
+  --font-size-xl: 22px;
+  --font-size-2xl: 28px;
+  --line-height: 1.5;
+
+  --touch-target: 44px;
+  --sidebar-width: 232px;
+  --bottom-nav-height: 64px;
+  --content-max-width: 1120px;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg: #0f1115;
+    --color-surface: #181b21;
+    --color-surface-muted: #1f232a;
+    --color-border: #2c313a;
+    --color-text: #e8eaed;
+    --color-text-muted: #a3aab5;
+    --color-accent: #7aa7ff;
+    --color-accent-hover: #9bbcff;
+    --color-accent-soft: #1d2a44;
+    --color-on-accent: #0b1222;
+    --color-danger: #ff8f84;
+    --color-danger-soft: #3a1d1b;
+    --color-warning: #f2b557;
+    --color-warning-soft: #36280f;
+    --color-success: #74d494;
+    --color-success-soft: #15301f;
+    --color-info-soft: #1a2436;
+    --color-nav-bg: #14171c;
+    --color-nav-active-bg: #1d2a44;
+    --color-nav-active-text: #b3cbff;
+    --color-focus: #9bbcff;
+    --color-shadow: rgb(0 0 0 / 40%);
+
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-bg: #0f1115;
+  --color-surface: #181b21;
+  --color-surface-muted: #1f232a;
+  --color-border: #2c313a;
+  --color-text: #e8eaed;
+  --color-text-muted: #a3aab5;
+  --color-accent: #7aa7ff;
+  --color-accent-hover: #9bbcff;
+  --color-accent-soft: #1d2a44;
+  --color-on-accent: #0b1222;
+  --color-danger: #ff8f84;
+  --color-danger-soft: #3a1d1b;
+  --color-warning: #f2b557;
+  --color-warning-soft: #36280f;
+  --color-success: #74d494;
+  --color-success-soft: #15301f;
+  --color-info-soft: #1a2436;
+  --color-nav-bg: #14171c;
+  --color-nav-active-bg: #1d2a44;
+  --color-nav-active-text: #b3cbff;
+  --color-focus: #9bbcff;
+  --color-shadow: rgb(0 0 0 / 40%);
+
+  color-scheme: dark;
+}

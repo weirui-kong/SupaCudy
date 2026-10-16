@@ -22,6 +22,9 @@ for dir in "$ROOT"/packages/*/; do
 	PKGS+="$(basename "$dir") "
 done
 
+echo "==> building the web UI into packages/supacudy-ui/htdocs"
+(cd "$ROOT/web" && { [ -d node_modules ] || npm ci --no-audit --no-fund; } && npm run build)
+
 rm -rf "$OUT"
 mkdir -p "$OUT"
 # The container runs as an unprivileged user with a different uid.
