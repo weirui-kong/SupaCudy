@@ -14,6 +14,19 @@ brew install shellcheck               # lint 测试需要（Linux 上用 apt ins
 
 项目规则（产品、编码、测试、协作）见 [CLAUDE.md](../CLAUDE.md) 和 [docs/rules/](rules/)。
 
+## 加速和本机配置
+
+- **镜像源**：在 `config/local.env`（不入库）里设置 `OPENWRT_MIRROR`，ImageBuilder 和测试容器会从这里下载官方软件包。国内推荐：
+
+  ```bash
+  echo 'OPENWRT_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/openwrt' > config/local.env
+  ```
+
+  软件包签名仍按 OpenWrt 的公钥校验，换源不影响安全性。
+- **下载缓存**：ImageBuilder 下载过的软件包保存在 `out/cache/imagebuilder/`，下次直接复用。
+- **跳过没变的构建**：`build-packages.sh` 和 `build-image.sh` 会对输入内容算哈希，没变就跳过 SDK / ImageBuilder。需要强制重建时加 `FORCE=1`。
+- **并行测试**：`scripts/test.sh` 在打包完成后并行运行 api、web-e2e 和模拟器三类测试，它们各用各的容器、端口和日志（api 用 18081，e2e 用 18080，模拟器用 8088 / 2222，都只监听 127.0.0.1）。
+
 ## 测试
 
 ```bash

@@ -1,0 +1,17 @@
+#!/bin/sh
+# Copyright 2026 SupaCudy contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Light background traffic so emulated clients show non-zero speeds.
+#
+#   traffic <seconds between requests>
+
+interval="${1:-2}"
+
+while :; do
+	gateway="$(ip -4 route show default | awk '{ print $3; exit }')"
+	if [ -n "$gateway" ]; then
+		wget -q -O /dev/null "http://$gateway/supacudy/" 2>/dev/null
+	fi
+	sleep "$interval"
+done

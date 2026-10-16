@@ -11,51 +11,85 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOGS="$ROOT/out/test-logs"
-mkdir -p "$LOGS"
+RESULTS="$LOGS/results"
+rm -rf "$RESULTS"
+mkdir -p "$RESULTS"
 
-RESULTS=()
-FAILED=0
+CATEGORIES=(lint web-deps web-unit build-packages build api web-e2e emulator-image emulator)
 
+# Results go to files rather than variables because the last categories run
+# in background subshells.
 run() {
-	local category="$1" log="$LOGS/$2.log"
-	shift 2
-	echo "==> [$category] $*"
+	local category="$1" log="$LOGS/$1.log"
+	shift
+	echo "==> [$category] started"
+	local started=$SECONDS
 	if "$@" >"$log" 2>&1; then
-		RESULTS+=("PASS  $category")
+		echo "PASS  $category  ($((SECONDS - started))s)" > "$RESULTS/$category"
+		echo "==> [$category] passed in $((SECONDS - started))s"
 	else
-		RESULTS+=("FAIL  $category  (log: ${log#"$ROOT"/})")
-		FAILED=1
-		tail -40 "$log" | sed 's/^/    | /'
+		echo "FAIL  $category  ($((SECONDS - started))s, log: ${log#"$ROOT"/})" > "$RESULTS/$category"
+		echo "==> [$category] FAILED, last lines of ${log#"$ROOT"/}:"
+		tail -40 "$log" | sed "s/^/    [$category] | /"
 	fi
 }
 
-skip() {
-	echo "==> [$1] skipped: $2"
-	RESULTS+=("SKIP  $1  ($2)")
+passed() {
+	grep -q '^PASS' "$RESULTS/$1" 2>/dev/null
 }
 
-run lint lint "$ROOT/tests/lint/check-shell.sh"
+skip() {
+	echo "SKIP  $1  ($2)" > "$RESULTS/$1"
+}
 
-web_deps() { (cd "$ROOT/web" && { [ -d node_modules ] || npm ci --no-audit --no-fund; }); }
-run web-deps web-deps web_deps
-run web-unit web-unit npm --prefix "$ROOT/web" test
+web_deps() {
+	cd "$ROOT/web" && { [ -d node_modules ] || npm ci --no-audit --no-fund; }
+}
 
-# Every test category below needs freshly built packages.
-run build-packages build-packages "$ROOT/scripts/build-packages.sh"
+emulator_chain() {
+	run emulator-image "$ROOT/scripts/emulator.sh" image
+	if passed emulator-image; then
+		run emulator "$ROOT/tests/emulator/check-scenario.sh"
+	else
+		skip emulator "emulator image did not build"
+	fi
+}
 
-if [ "$FAILED" = 0 ]; then
-	run build   build-tests "$ROOT/tests/build/check-packages.sh"
-	run api     api-tests   "$ROOT/scripts/smoke-test.sh"
-	run web-e2e web-e2e     "$ROOT/scripts/test-e2e.sh"
+START=$SECONDS
+
+run lint "$ROOT/tests/lint/check-shell.sh"
+run web-deps web_deps
+run web-unit npm --prefix "$ROOT/web" test
+
+# Every category below needs freshly built packages.
+run build-packages "$ROOT/scripts/build-packages.sh"
+
+if passed build-packages; then
+	run build "$ROOT/tests/build/check-packages.sh"
+
+	# Independent of each other: separate containers, ports, VM and logs.
+	SMOKE_NAME=supacudy-api PORT=18081 run api "$ROOT/scripts/smoke-test.sh" &
+	run web-e2e "$ROOT/scripts/test-e2e.sh" &
+	emulator_chain &
+	wait
 else
-	skip build   "packages did not build"
-	skip api     "packages did not build"
-	skip web-e2e "packages did not build"
+	for category in build api web-e2e emulator-image emulator; do
+		skip "$category" "packages did not build"
+	done
 fi
 
 echo
-echo "Summary:"
-printf '  %s\n' "${RESULTS[@]}"
+echo "Summary ($((SECONDS - START))s):"
+FAILED=0
+for category in "${CATEGORIES[@]}"; do
+	if [ -f "$RESULTS/$category" ]; then
+		sed 's/^/  /' "$RESULTS/$category"
+		if grep -q '^FAIL' "$RESULTS/$category"; then FAILED=1; fi
+	else
+		echo "  FAIL  $category  (did not report a result)"
+		FAILED=1
+	fi
+done
 
 if [ "$FAILED" = 0 ]; then
 	echo "All tests passed."

@@ -1,0 +1,49 @@
+#!/bin/sh
+# Copyright 2026 SupaCudy contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Emulator only. eth0 is the WAN (QEMU user network with internet access),
+# eth1 is a management port the host reaches through QEMU port forwards,
+# and br-lan starts empty: the scenario's virtual clients plug into it.
+#
+# Every subnet here exists only inside the VM. They avoid 192.168.0-102.x so
+# nothing looks like the developer's own networks: LAN 192.168.200.0/24,
+# everything else under 10.250.0.0/16 (see docs/emulator.md).
+
+lan_bridge="$(uci show network | sed -n "s/^network\.\(@device\[[0-9]*\]\)\.name='br-lan'$/\1/p")"
+lan_zone="$(uci show firewall | sed -n "s/^firewall\.\(@zone\[[0-9]*\]\)\.name='lan'$/\1/p")"
+
+uci -q delete "network.$lan_bridge.ports"
+uci set "network.$lan_bridge.bridge_empty=1"
+
+uci set network.lan.ipaddr='192.168.200.1'
+uci set network.wan.device='eth0'
+uci set network.wan6.device='eth0'
+
+uci set network.mgmt=interface
+uci set network.mgmt.device='eth1'
+uci set network.mgmt.proto='static'
+uci set network.mgmt.ipaddr='10.250.3.15'
+uci set network.mgmt.netmask='255.255.255.0'
+uci add_list "firewall.$lan_zone.network=mgmt"
+
+# The upstream hotspot reaches the internet through the router's own WAN,
+# like a hotel network behind its own uplink.
+uci set firewall.emu_uplink=zone
+uci set firewall.emu_uplink.name='emu_uplink'
+uci add_list firewall.emu_uplink.device='veth-uplink'
+uci set firewall.emu_uplink.input='ACCEPT'
+uci set firewall.emu_uplink.output='ACCEPT'
+uci set firewall.emu_uplink.forward='ACCEPT'
+uci set firewall.emu_uplink_wan=forwarding
+uci set firewall.emu_uplink_wan.src='emu_uplink'
+uci set firewall.emu_uplink_wan.dest='wan'
+
+uci set system.@system[0].hostname='SupaCudy-Emulator'
+
+uci commit
+
+# Test credential for the emulator only, shared with the e2e tests.
+printf 'supacudy-test\nsupacudy-test\n' | passwd root >/dev/null 2>&1
+
+exit 0

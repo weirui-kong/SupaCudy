@@ -20,7 +20,7 @@ case "$(uname -m)" in
 	x86_64|amd64)  IMAGE="openwrt/rootfs:x86-64-${OPENWRT_VERSION}" ;;
 	*) echo "Unsupported host architecture: $(uname -m)" >&2; exit 1 ;;
 esac
-NAME="supacudy-smoke"
+NAME="${SMOKE_NAME:-supacudy-smoke}"
 PORT="${PORT:-8080}"
 PASSWORD="supacudy-test"
 KEEP="${1:-}"
@@ -49,15 +49,16 @@ docker rm -f "$NAME" >/dev/null 2>&1 || true
 [ "$KEEP" = --keep ] || trap 'docker rm -f "$NAME" >/dev/null 2>&1 || true' EXIT
 
 echo "==> starting $IMAGE"
-docker run -d --name "$NAME" -p "$PORT:80" \
+docker run -d --name "$NAME" -p "127.0.0.1:$PORT:80" \
 	-v "$ROOT/out/packages:/supacudy:ro" \
 	"$IMAGE" sleep infinity >/dev/null
 
-docker exec -e PASSWORD="$PASSWORD" "$NAME" sh -euc '
+docker exec -e PASSWORD="$PASSWORD" -e MIRROR="$OPENWRT_MIRROR" "$NAME" sh -euc '
 	mkdir -p /var/lock /var/run /tmp/sysinfo
 	echo "supacudy,smoke-test" > /tmp/sysinfo/board_name
 	echo "SupaCudy smoke test" > /tmp/sysinfo/model
 
+	sed -i "s#https://downloads.openwrt.org#${MIRROR%/}#" /etc/opkg/distfeeds.conf
 	opkg update >/dev/null
 	opkg install /supacudy/*.ipk >/dev/null
 	# A syntax error would otherwise only show up as "Object not found".

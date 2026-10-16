@@ -1,0 +1,25 @@
+#!/bin/sh
+# Copyright 2026 SupaCudy contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Minimal udhcpc hook for the emulated clients. OpenWrt's own DHCP script
+# talks to netifd, which does not manage these namespaces.
+
+# shellcheck disable=SC2154 # interface, ip, mask, router and dns come from udhcpc
+case "$1" in
+	deconfig)
+		ip -4 addr flush dev "$interface"
+		ip link set "$interface" up
+		;;
+	bound|renew)
+		ip -4 addr flush dev "$interface"
+		ip addr add "$ip/${mask:-24}" dev "$interface"
+		[ -n "$router" ] && ip route replace default via "${router%% *}" dev "$interface"
+		: > /etc/resolv.conf
+		for server in $dns; do
+			echo "nameserver $server" >> /etc/resolv.conf
+		done
+		;;
+esac
+
+exit 0

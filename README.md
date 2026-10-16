@@ -17,7 +17,7 @@ SupaCudy 不是任何厂商固件的移植或修改版。底层是原版 OpenWrt
 
 ## 快速开始
 
-需要 Docker（macOS 上用 Docker Desktop 即可）、Node.js 24 和 shellcheck。
+需要 Docker（macOS 上用 Docker Desktop 即可）、Node.js 24、shellcheck 和 QEMU（`brew install qemu`）。
 
 ```bash
 # 0. 启用 pre-push 钩子，跑一遍全部测试
@@ -35,6 +35,12 @@ scripts/build-image.sh cudy-tr3000-v1
 ```
 
 刷入后，LuCI 仍在 `http://192.168.1.1/`，SupaCudy 界面在 `http://192.168.1.1/supacudy/`。
+
+没有路由器时，可以在本机跑一台带虚拟 WiFi、虚拟客户端的完整模拟器（见 [docs/emulator.md](docs/emulator.md)）：
+
+```bash
+scripts/emulator.sh build && scripts/emulator.sh start   # 打开 http://127.0.0.1:8088/supacudy/
+```
 
 开发时不用每次刷机，可以直接把改动推到路由器上：
 

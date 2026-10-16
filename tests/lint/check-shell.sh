@@ -16,11 +16,12 @@ fi
 
 host_scripts=(scripts/*.sh tests/*/*.sh .githooks/*)
 
-# Anything under packages/*/files/ runs on the router under BusyBox ash.
+# Anything under packages/*/files/ and emulator/files/ runs on the router
+# under BusyBox ash.
 device_scripts=()
 while IFS= read -r f; do
 	head -1 "$f" | grep -q '^#!/bin/sh' && device_scripts+=("$f")
-done < <(find packages -path '*/files/*' -type f)
+done < <(find packages emulator -path '*/files/*' -type f)
 
 echo "==> host scripts (bash): ${#host_scripts[@]}"
 shellcheck -x "${host_scripts[@]}"

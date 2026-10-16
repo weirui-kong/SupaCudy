@@ -1,0 +1,200 @@
+#!/bin/sh /etc/rc.common
+# Copyright 2026 SupaCudy contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Builds the world around the emulated router, each actor in its own
+# network namespace on this VM:
+#
+#   upstream  phy3: "Hotel-WiFi" (WPA2) and "Cafe-Free" (open) hotspots with
+#             DHCP, routed to the internet through veth-uplink
+#   phone     phy2: a Wi-Fi client of the router's 2.4 GHz network
+#   laptop    wired LAN client on br-lan
+#   nas       wired LAN client on br-lan
+#
+# phy0 and phy1 stay with the router as its 2.4 GHz and 5 GHz radios.
+
+# shellcheck disable=SC2034 # read by rc.common
+START=99
+# shellcheck disable=SC2034 # read by rc.common
+USE_PROCD=1
+
+LIB=/usr/libexec/supacudy-emulator
+RUN=/var/run/supacudy-emulator
+
+ROUTER_SSID='SupaCudy-Emu'
+ROUTER_KEY='supacudy-wifi'
+HOTEL_SSID='Hotel-WiFi'
+HOTEL_KEY='hotel-guest'
+CAFE_SSID='Cafe-Free'
+
+log() {
+	logger -t supacudy-emulator "$*"
+}
+
+in_ns() {
+	ns="$1"
+	shift
+	ip netns exec "$ns" "$@"
+}
+
+ensure_ns() {
+	ip netns list | grep -qw "$1" || ip netns add "$1"
+	mkdir -p "/etc/netns/$1"
+	# ip netns exec bind-mounts this over /etc/resolv.conf in the namespace.
+	[ -f "/etc/netns/$1/resolv.conf" ] || : > "/etc/netns/$1/resolv.conf"
+	in_ns "$1" ip link set lo up
+}
+
+move_phy() {
+	phy="$1"
+	ns="$2"
+	ifname="$3"
+	if [ -d "/sys/class/ieee80211/$phy" ]; then
+		iw phy "$phy" set netns name "$ns"
+	fi
+	in_ns "$ns" iw dev "$ifname" info >/dev/null 2>&1 ||
+		in_ns "$ns" iw phy "$phy" interface add "$ifname" type managed
+}
+
+configure_router_wifi() {
+	[ "$(uci -q get wireless.radio0.supacudy_emulator)" = 1 ] && return
+	[ -s /etc/config/wireless ] || wifi config
+
+	uci -q batch <<-EOF
+		set wireless.radio0.band='2g'
+		set wireless.radio0.channel='6'
+		set wireless.radio0.htmode='HT20'
+		set wireless.radio0.disabled='0'
+		set wireless.radio0.supacudy_emulator='1'
+		set wireless.default_radio0.ssid='$ROUTER_SSID'
+		set wireless.default_radio0.encryption='psk2'
+		set wireless.default_radio0.key='$ROUTER_KEY'
+		set wireless.radio1.band='5g'
+		set wireless.radio1.channel='36'
+		set wireless.radio1.htmode='HT20'
+		set wireless.radio1.disabled='0'
+		set wireless.default_radio1.ssid='$ROUTER_SSID-5G'
+		set wireless.default_radio1.encryption='psk2'
+		set wireless.default_radio1.key='$ROUTER_KEY'
+		delete wireless.radio2
+		delete wireless.default_radio2
+		delete wireless.radio3
+		delete wireless.default_radio3
+		commit wireless
+	EOF
+	wifi reload
+}
+
+setup_upstream() {
+	ensure_ns upstream
+	move_phy phy3 upstream up0
+
+	if ! ip link show veth-uplink >/dev/null 2>&1; then
+		ip link add veth-uplink type veth peer name uplink0 netns upstream
+		ip addr add 10.250.10.1/30 dev veth-uplink
+		ip link set veth-uplink up
+		# The firewall zone matches the device by name, so reload it now
+		# that the device exists.
+		/etc/init.d/firewall reload
+	fi
+
+	in_ns upstream ip addr replace 10.250.10.2/30 dev uplink0
+	in_ns upstream ip link set uplink0 up
+	in_ns upstream ip route replace default via 10.250.10.1
+	in_ns upstream sysctl -qw net.ipv4.ip_forward=1
+	in_ns upstream nft -f - <<-EOF
+		table ip emu_nat
+		delete table ip emu_nat
+		table ip emu_nat {
+			chain post {
+				type nat hook postrouting priority 100;
+				oifname "uplink0" masquerade
+			}
+		}
+	EOF
+
+	mkdir -p "$RUN"
+	cat > "$RUN/hostapd-upstream.conf" <<-EOF
+		interface=up0
+		driver=nl80211
+		ctrl_interface=$RUN/hostapd
+		hw_mode=g
+		channel=1
+		ssid=$HOTEL_SSID
+		wpa=2
+		wpa_key_mgmt=WPA-PSK
+		rsn_pairwise=CCMP
+		wpa_passphrase=$HOTEL_KEY
+		bss=up1
+		ssid=$CAFE_SSID
+	EOF
+}
+
+setup_phone() {
+	ensure_ns phone
+	move_phy phy2 phone ph0
+	mkdir -p "$RUN"
+	cat > "$RUN/wpa-phone.conf" <<-EOF
+		ctrl_interface=$RUN/wpa-phone
+		network={
+			ssid="$ROUTER_SSID"
+			psk="$ROUTER_KEY"
+		}
+	EOF
+}
+
+setup_wired() {
+	name="$1"
+	mac="$2"
+	ensure_ns "$name"
+	if ! ip link show "veth-$name" >/dev/null 2>&1; then
+		ip link add "veth-$name" type veth peer name eth0 netns "$name"
+		in_ns "$name" ip link set eth0 address "$mac"
+	fi
+	ip link set "veth-$name" master br-lan
+	ip link set "veth-$name" up
+	in_ns "$name" ip link set eth0 up
+}
+
+instance() {
+	name="$1"
+	shift
+	procd_open_instance "$name"
+	procd_set_param command "$@"
+	procd_set_param respawn 3600 5 0
+	procd_set_param stderr 1
+	procd_close_instance
+}
+
+start_service() {
+	log "building the emulated network"
+	configure_router_wifi
+	setup_upstream
+	setup_phone
+	setup_wired laptop 02:5c:00:00:00:11
+	setup_wired nas 02:5c:00:00:00:12
+
+	instance upstream-hostapd ip netns exec upstream hostapd "$RUN/hostapd-upstream.conf"
+	instance upstream-dhcp ip netns exec upstream dnsmasq --keep-in-foreground \
+		--conf-file=/dev/null --bind-dynamic --interface=up0 --interface=up1 \
+		--except-interface=lo --dhcp-range=up0,10.250.11.100,10.250.11.199,1h \
+		--dhcp-range=up1,10.250.12.100,10.250.12.199,1h --no-resolv --server=10.250.2.3 \
+		--pid-file="$RUN/dnsmasq-upstream.pid" --dhcp-leasefile="$RUN/dnsmasq-upstream.leases"
+	instance upstream-addr "$LIB/upstream-addresses"
+
+	instance phone-wpa ip netns exec phone wpa_supplicant -i ph0 -c "$RUN/wpa-phone.conf"
+	instance phone-dhcp ip netns exec phone udhcpc -f -i ph0 -x hostname:Pixel-Phone -s "$LIB/udhcpc.script"
+	instance phone-traffic ip netns exec phone "$LIB/traffic" 3
+
+	instance laptop-dhcp ip netns exec laptop udhcpc -f -i eth0 -x hostname:Work-Laptop -s "$LIB/udhcpc.script"
+	instance laptop-traffic ip netns exec laptop "$LIB/traffic" 1
+	instance nas-dhcp ip netns exec nas udhcpc -f -i eth0 -x hostname:Home-NAS -s "$LIB/udhcpc.script"
+}
+
+stop_service() {
+	for ns in upstream phone laptop nas; do
+		ip netns del "$ns" 2>/dev/null
+	done
+	ip link del veth-uplink 2>/dev/null
+	true
+}

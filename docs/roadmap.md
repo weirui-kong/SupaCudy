@@ -6,6 +6,7 @@
 - [x] 用官方 SDK 和 ImageBuilder 在 Docker 里打包
 - [x] 三个软件包的空壳，加一个能登录并读出设备信息的占位页面
 - [x] 容器冒烟测试（`scripts/smoke-test.sh`），CI 里每次提交自动跑
+- [x] QEMU 模拟器：完整系统 + 虚拟 WiFi（hwsim）+ 虚拟上游热点和客户端，见 [docs/emulator.md](emulator.md)
 - [ ] 在 TR3000 真机上刷入，确认无线、网口、USB、按键都正常
 
 ## 阶段 0.5：需求拆解

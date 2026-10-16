@@ -1,5 +1,8 @@
-# Build output
+# Build output and caches
 /out/
+
+# Machine-specific settings
+/config/local.env
 
 # Front-end
 /web/node_modules/

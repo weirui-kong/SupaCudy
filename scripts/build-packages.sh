@@ -25,6 +25,21 @@ done
 echo "==> building the web UI into packages/supacudy-ui/htdocs"
 (cd "$ROOT/web" && { [ -d node_modules ] || npm ci --no-audit --no-fund; } && npm run build)
 
+# The SDK step is slow under amd64 emulation, so skip it when nothing that
+# goes into the packages has changed. FORCE=1 rebuilds anyway.
+STAMP="$OUT/.inputs.sha256"
+inputs_hash() {
+	(cd "$ROOT" && find packages config/openwrt.env scripts/build-packages.sh -type f -print0 |
+		LC_ALL=C sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1)
+}
+HASH="$(inputs_hash)"
+if [ -z "${FORCE:-}" ] && [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$HASH" ] &&
+	ls "$OUT"/*.ipk >/dev/null 2>&1; then
+	echo "==> packages are up to date (inputs unchanged), skipping the SDK"
+	ls -1 "$OUT"
+	exit 0
+fi
+
 rm -rf "$OUT"
 mkdir -p "$OUT"
 # The container runs as an unprivileged user with a different uid.
@@ -58,5 +73,6 @@ docker run --rm --platform linux/amd64 \
 		find bin/packages -name "*.ipk" -path "*/supacudy/*" -exec cp {} /out/ \;
 	'
 
+echo "$HASH" > "$STAMP"
 echo "==> packages in ${OUT#"$ROOT"/}/"
 ls -1 "$OUT"

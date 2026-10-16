@@ -17,6 +17,7 @@
 | api | `scripts/smoke-test.sh`; future cases go in `tests/api/` | Calls through `/ubus`: login, ACL enforcement, success and error responses of every `supacudy.*` method | Official OpenWrt rootfs container |
 | web-unit | `web/tests/unit/` | `svelte-check` type check, then components, state and utilities; zh-CN and en i18n keys complete and in sync | Node (Vitest + jsdom) |
 | web-e2e | `web/tests/e2e/`, run by `scripts/test-e2e.sh` | Every page across the matrix below | Playwright (Chromium) against the api test container |
+| emulator | `tests/emulator/` | A fresh QEMU VM of the full system with the emulated network ([docs/emulator.md](../emulator.md)): WAN, LAN clients over DHCP, Wi-Fi association, upstream hotspots visible to the router, UI reachable. Network features (repeater, clients, Wi-Fi, LAN) add their end-to-end checks here | QEMU (HVF on macOS, KVM or TCG on Linux) |
 | hardware | Checklists in `docs/hardware/` | Wi-Fi, Ethernet ports, USB, buttons and anything else only testable on a real device | Real TR3000, run manually |
 
 ### web-e2e matrix
@@ -33,7 +34,7 @@ Each combination checks: no horizontal scrolling, no missing i18n keys shown as 
 
 ## Running
 
-- `scripts/test.sh` is the single entry point. It runs lint → web-unit → build-packages → build → api → web-e2e, prints a summary and exits non-zero if anything fails.
+- `scripts/test.sh` is the single entry point. It runs lint → web-unit → build-packages → build → api → web-e2e → emulator, prints a summary and exits non-zero if anything fails.
 - Full logs for each category are written to `out/test-logs/`.
 - When adding a category, wire it into `scripts/test.sh` and update the table above in the same change.
 - For changes that can only be verified on a real device, the commit message lists which checklist items were tested.

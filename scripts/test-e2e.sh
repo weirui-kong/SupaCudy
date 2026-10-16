@@ -13,7 +13,9 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # A separate port so a container started by hand on 8080 is left alone.
 PORT="${E2E_PORT:-18080}"
 
-trap 'docker rm -f supacudy-smoke >/dev/null 2>&1 || true' EXIT
+# Its own container, so it can run in parallel with the api tests.
+export SMOKE_NAME=supacudy-e2e
+trap 'docker rm -f "$SMOKE_NAME" >/dev/null 2>&1 || true' EXIT
 
 PORT="$PORT" "$ROOT/scripts/smoke-test.sh" --keep
 
