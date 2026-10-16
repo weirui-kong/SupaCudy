@@ -1,0 +1,65 @@
+# VPN
+
+VPN 是 GL 最有特色的部分：把"客户端 / 服务端 × WireGuard / OpenVPN"四种组合统一在一个仪表盘里管理。简体中文界面下整个模块隐藏。
+
+## VPN 仪表盘
+
+![VPN 仪表盘](../screenshots/desktop/04-vpn-dashboard.jpg)
+
+上下两张卡片：VPN 客户端、VPN 服务端。每张卡片列出 OpenVPN 和 WireGuard 两行，未配置时显示"立即设置"，跳到对应的客户端 / 服务端页。
+
+### 代理模式（客户端卡片上的"全局代理 ⇄"）
+
+![代理模式](../screenshots/details/vpn-proxy-mode.jpg)
+
+| 分类 | 模式 | 含义 |
+|---|---|---|
+| — | 全局代理 | 所有流量走 VPN，只能启用一个客户端实例 |
+| 策略模式 | 按目标域名或 IP | 只有指定网站的流量走 VPN |
+| 策略模式 | 按客户端设备 | 只有指定 MAC 的设备走 VPN |
+| 策略模式 | 按 VLAN | 只有指定 VLAN 走 VPN |
+| 路由模式 | 自动检测 | 使用配置文件或服务端下发的路由 |
+| 路由模式 | 自定义路由规则 | 为每个客户端实例手动配置路由（可同时多个实例） |
+
+### 客户端全局选项
+
+![客户端全局选项](../screenshots/details/vpn-client-global-options.jpg)
+
+| 选项 | 作用 |
+|---|---|
+| 阻止非 VPN 流量 | 即 Kill Switch：VPN 断开、客户端自设 DNS、按 IP 直连等情况下都不会漏到 VPN 之外 |
+| 允许访问 WAN | VPN 连接时仍可访问上级网络里的打印机、NAS 等 |
+| GL.iNet 服务使用 VPN | 让 GoodCloud、DDNS、远程终端这类本应用真实 IP 的服务也走 VPN |
+
+### 服务端全局选项
+
+只有一项"VPN 级联"：路由器同时运行服务端和客户端时，连进服务端的设备也转发进客户端隧道。
+
+## WireGuard 客户端
+
+![WireGuard 客户端](../screenshots/desktop/05-wireguard-client.jpg)
+
+- 首屏是"从 VPN 提供商获取配置文件"，列出内置的提供商（本机：AzireVPN、Mullvad），下方"手动添加"。
+- 配置按"提供商分组"组织：左栏分组列表，右栏上传区（支持 .zip / .tar / .gz / .conf / .txt，可拖放）和"手动添加配置"。
+- **点"手动添加"会立即创建一个默认名为 New Provider 的分组并保存**，然后才让你改名。这次观察就因此在设备上留下了一个空分组。
+
+![新建分组](../screenshots/details/wireguard-client-new-group.jpg)
+
+## OpenVPN 客户端
+
+结构与 WireGuard 客户端相同；内置提供商是 NordVPN。
+
+## WireGuard 服务端
+
+![WireGuard 服务端](../screenshots/desktop/06-wireguard-server.jpg)
+
+空状态给出四步引导：生成配置 → 添加节点 → 把节点信息复制到客户端 → 回仪表盘启动。只有一个主按钮"生成配置"（会生成密钥并写入配置，本次没有点）。
+
+## OpenVPN 服务端
+
+同样是四步引导：生成配置 → 修改默认配置并保存 → 导出客户端配置文件 → 回仪表盘启动。
+
+## 相关入口
+
+- 侧边拨动开关可以绑定为"OpenVPN 客户端开关"或"WireGuard 客户端开关"，见 [系统 → 按键设置](system.md#按键设置)。
+- 防火墙、客户端列表、GoodCloud 等功能不支持 IPv6，同时开 VPN 和 IPv6 可能导致 IPv6 泄漏（IPv6 页的提示）。
