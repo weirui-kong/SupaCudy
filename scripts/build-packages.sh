@@ -17,7 +17,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 IMAGE="openwrt/sdk:${OPENWRT_TARGET}-${OPENWRT_SUBTARGET}-${OPENWRT_VERSION}"
 OUT="$ROOT/out/packages"
 
-PKGS="$(cd "$ROOT/packages" && ls -d */ | tr -d / | tr '\n' ' ')"
+PKGS=""
+for dir in "$ROOT"/packages/*/; do
+	PKGS+="$(basename "$dir") "
+done
 
 rm -rf "$OUT"
 mkdir -p "$OUT"

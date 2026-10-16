@@ -5,6 +5,23 @@
 - Docker（macOS 上用 Docker Desktop）。OpenWrt 官方的 SDK 和 ImageBuilder 镜像只有 amd64 版本，在 Apple Silicon 上会通过模拟运行，速度慢一些，但能用。
 - 一台运行 OpenWrt 24.10 的 TR3000，或者以后加上的 QEMU 虚拟机，用来调试。
 
+## 第一次克隆后
+
+```bash
+git config core.hooksPath .githooks   # 启用 pre-push 钩子：push 前自动跑全部测试
+brew install shellcheck               # lint 测试需要（Linux 上用 apt install shellcheck）
+```
+
+项目规则（产品、编码、测试、协作）见 [CLAUDE.md](../CLAUDE.md) 和 [docs/rules/](rules/)。
+
+## 测试
+
+```bash
+scripts/test.sh
+```
+
+依次运行 lint → 打包 → build → api（以及前端建好后的 web-unit、web-e2e），最后输出汇总。任何一项失败都不能 push。分类和要求见 [docs/rules/testing.md](rules/testing.md)，每一项的完整日志在 `out/test-logs/`。
+
 ## 打包
 
 ```bash

@@ -77,7 +77,6 @@
 
 	let rpcId = 0;
 
-	// One ubus call over uhttpd's JSON-RPC endpoint.
 	async function ubus(session, object, method, args = {}) {
 		const res = await fetch('/ubus', {
 			method: 'POST',

@@ -1,7 +1,6 @@
 // Copyright 2026 SupaCudy contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// rpcd ucode plugin: exposes the "supacudy" ubus object.
 // Every method added here must also be listed in acl.d/supacudy.json.
 
 'use strict';
@@ -13,7 +12,6 @@ function read_trimmed(path) {
 	return s ? trim(s) : null;
 }
 
-// Parse /etc/openwrt_release (KEY='value' lines) into an object.
 function openwrt_release() {
 	const rel = {};
 

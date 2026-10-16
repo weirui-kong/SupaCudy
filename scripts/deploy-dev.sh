@@ -22,14 +22,14 @@ else
 	TAR_OWNER=(--owner=0 --group=0)
 fi
 
-# Stream the contents of a local directory into a directory on the router.
-# tar over ssh works with dropbear, which has no sftp server (so plain scp
-# often fails). The top-level entries are listed explicitly so the
-# destination directory itself (e.g. /) keeps its permissions.
+# tar over ssh because dropbear has no sftp server, so plain scp often fails.
+# Top-level entries are listed explicitly so the destination directory itself
+# (e.g. /) keeps its permissions.
+# shellcheck disable=SC2029 # $dest is meant to expand locally
 push() {
 	local src="$1" dest="$2"
 	echo "==> ${src#"$ROOT"/} -> $HOST:$dest"
-	(cd "$src" && tar "${TAR_OWNER[@]}" -cf - $(ls -A)) |
+	(cd "$src" && shopt -s dotglob && tar "${TAR_OWNER[@]}" -cf - -- *) |
 		ssh "$HOST" "mkdir -p '$dest' && tar -C '$dest' -xf -"
 }
 

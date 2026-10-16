@@ -17,12 +17,17 @@ CONF="$ROOT/profiles/$NAME.conf"
 
 if [ -z "$NAME" ] || [ "$NAME" = common ] || [ ! -f "$CONF" ]; then
 	echo "usage: $0 <profile>" >&2
-	echo "profiles:" $(cd "$ROOT/profiles" && ls *.conf | sed 's/\.conf$//' | grep -vx common) >&2
+	echo "profiles:" >&2
+	for f in "$ROOT"/profiles/*.conf; do
+		p="$(basename "$f" .conf)"
+		[ "$p" = common ] || echo "  $p" >&2
+	done
 	exit 1
 fi
 
 . "$ROOT/config/openwrt.env"
 . "$ROOT/profiles/common.conf"
+# shellcheck source=profiles/cudy-tr3000-v1.conf # the profile is picked at run time
 . "$CONF"
 
 IMAGE="openwrt/imagebuilder:${OPENWRT_TARGET}-${OPENWRT_SUBTARGET}-${OPENWRT_VERSION}"
@@ -39,8 +44,7 @@ mkdir -p "$OUT"
 # The container runs as an unprivileged user with a different uid.
 chmod a+rwx "$OUT"
 
-# Collapse the multi-line lists into one space-separated string.
-PACKAGES="$(echo $COMMON_PACKAGES $DEVICE_PACKAGES)"
+PACKAGES="$(echo "$COMMON_PACKAGES $DEVICE_PACKAGES" | xargs)"
 
 echo "==> $IMAGE, profile $PROFILE"
 echo "==> packages: $PACKAGES"

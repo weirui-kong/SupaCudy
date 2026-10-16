@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Copyright 2026 SupaCudy contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Enable once per clone with:  git config core.hooksPath .githooks
+
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+
+echo "pre-push: running scripts/test.sh (all tests must pass before pushing)"
+exec "$ROOT/scripts/test.sh"

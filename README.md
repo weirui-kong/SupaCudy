@@ -17,9 +17,13 @@ SupaCudy 不是任何厂商固件的移植或修改版。底层是原版 OpenWrt
 
 ## 快速开始
 
-需要 Docker（macOS 上用 Docker Desktop 即可）。
+需要 Docker（macOS 上用 Docker Desktop 即可）和 shellcheck。
 
 ```bash
+# 0. 启用 pre-push 钩子，跑一遍全部测试
+git config core.hooksPath .githooks
+scripts/test.sh
+
 # 1. 用官方 OpenWrt SDK 把 packages/ 打成 .ipk
 scripts/build-packages.sh
 
@@ -51,8 +55,9 @@ packages/             OpenWrt feed，三个软件包：
   supacudy-ui/          编译好的前端静态文件，安装到 /www/supacudy
 web/                  前端源码（待建，编译产物输出到 packages/supacudy-ui/htdocs）
 patches/              预留：万一要改 OpenWrt 本身，以补丁形式放这里
-scripts/              Docker 打包脚本和开发部署脚本
-docs/                 架构、路线图、硬件说明
+scripts/              Docker 打包、测试入口和开发部署脚本
+tests/                按类别分的测试用例（lint、build 等）
+docs/                 架构、路线图、硬件说明；docs/rules/ 是项目规则
 ```
 
 架构说明见 [docs/architecture.md](docs/architecture.md)。
