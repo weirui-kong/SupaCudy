@@ -1,0 +1,13 @@
+#!/bin/sh
+# Copyright 2026 SupaCudy contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Runs once on first boot (and after installing the package).
+
+# The web UI talks to rpcd through uhttpd's /ubus endpoint.
+if [ -z "$(uci -q get uhttpd.main.ubus_prefix)" ]; then
+	uci set uhttpd.main.ubus_prefix='/ubus'
+	uci commit uhttpd
+fi
+
+exit 0

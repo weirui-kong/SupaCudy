@@ -1,0 +1,13 @@
+{
+	"supacudy": {
+		"description": "SupaCudy web UI",
+		"read": {
+			"ubus": {
+				"session": [ "destroy" ],
+				"supacudy": [ "info" ],
+				"system": [ "board", "info" ]
+			}
+		},
+		"write": {}
+	}
+}
