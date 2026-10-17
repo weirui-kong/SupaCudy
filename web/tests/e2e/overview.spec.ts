@@ -20,6 +20,14 @@ test.describe('overview', () => {
     await expect(page.getByRole('meter', { name: m.overview.storage })).toHaveAttribute('aria-valuetext', '30%');
   });
 
+  test('links to the source code on GitHub in a new window', async ({ page }, testInfo) => {
+    const m = messages(testInfo);
+    const link = page.locator('.row', { has: page.getByText(m.overview.source, { exact: true }) }).getByRole('link');
+    await expect(link).toHaveAttribute('href', 'https://github.com/weirui-kong/SupaCudy');
+    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute('rel', /noopener/);
+  });
+
   test('shows the network map and links to the internet page', async ({ page }, testInfo) => {
     const m = messages(testInfo);
     const map = page.getByRole('navigation', { name: m.overview.topology });

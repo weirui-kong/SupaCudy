@@ -14,6 +14,8 @@
   import { formatBytes, formatDuration, formatLoad } from '../lib/format';
   import { locale, t } from '../lib/i18n/index.svelte';
 
+  const SOURCE_URL = 'https://github.com/weirui-kong/SupaCudy';
+
   let { refreshMs = 5000 }: { refreshMs?: number } = $props();
 
   let info = $state<DeviceInfo | null>(null);
@@ -68,6 +70,11 @@
         {info?.openwrt ? `${info.openwrt}${info.revision ? ` (${info.revision})` : ''}` : t('common.unavailable')}
       </DataRow>
       <DataRow label={t('overview.supacudy')}>{show(info?.version)}</DataRow>
+      <DataRow label={t('overview.source')}>
+        <a class="source" href={SOURCE_URL} target="_blank" rel="noopener noreferrer">
+          github.com/weirui-kong/SupaCudy<span class="visually-hidden"> {t('common.new_window')}</span>
+        </a>
+      </DataRow>
     </dl>
   </Card>
 
@@ -117,6 +124,13 @@
 </div>
 
 <style>
+  .source {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--touch-target);
+    overflow-wrap: anywhere;
+  }
+
   .grid {
     display: grid;
     gap: var(--space-4);

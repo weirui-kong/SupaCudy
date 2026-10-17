@@ -42,6 +42,7 @@ const zhCN: MessageShape<typeof en> = {
     wrong_password: '密码错误，请重试。',
   },
   overview: {
+    source: '源代码',
     storage: '存储空间',
     topology: '网络拓扑',
     this_router: '本路由器',

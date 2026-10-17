@@ -51,6 +51,7 @@ const en = {
     board: 'Board',
     openwrt: 'OpenWrt',
     supacudy: 'SupaCudy',
+    source: 'Source code',
     system: 'System',
     uptime: 'Up time',
     load: 'Load average',
