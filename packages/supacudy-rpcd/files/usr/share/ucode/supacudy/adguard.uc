@@ -409,4 +409,15 @@ const methods = {
 	adguard_web_set: { args: { enabled: false, password: '', hash: '' }, call: adguard_web_set }
 };
 
-export { methods, dns_option, apply_defaults, sync_login, valid_hash, default_password_in_use };
+// AdGuard Home caches answers from dnsmasq, including "no such name", so a
+// change to local names or DNS settings would otherwise show up only once
+// those expire. Run after dnsmasq has been reloaded.
+function clear_cache() {
+	if (enabled(uci()) && installed())
+		api('cache_clear', {});
+}
+
+// For run_later() chains, after the dnsmasq reload.
+const CLEAR_CACHE_CMD = `sleep 1; ucode -e "import { clear_cache } from 'supacudy.adguard'; clear_cache();"`;
+
+export { methods, dns_option, apply_defaults, sync_login, valid_hash, default_password_in_use, clear_cache, CLEAR_CACHE_CMD };

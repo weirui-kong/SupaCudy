@@ -45,10 +45,22 @@ eventually "the proxy stops and dnsmasq uses the network's servers again" \
 check "the outside server is cleaned up" \
 	"uci del_list dhcp.@dnsmasq[0].server=/corp.example/10.0.0.53 && uci commit dhcp && /etc/init.d/dnsmasq restart"
 
+# Until AdGuard Home has answered "no such name", which it then caches.
+eventually "a device looks the name up before it exists" \
+	"ip netns exec laptop nslookup nas.home 192.168.200.1 2>&1 | grep -q NXDOMAIN"
 check "a local host name is added" \
 	"ubus call supacudy host_set '{\"id\":\"\",\"name\":\"nas.home\",\"ip\":\"192.168.200.50\"}' | jsonfilter -e @.id > /tmp/host-id"
-eventually "LAN devices resolve it through the router" \
-	"ip netns exec laptop nslookup nas.home 192.168.200.1 | grep -q 'Address: 192.168.200.50'"
+# AdGuard Home must not keep answering from its cache that the name does
+# not exist; a cache entry would outlast this wait.
+resolved=0
+for _ in $(seq 8); do
+	if vm "ip netns exec laptop nslookup nas.home 192.168.200.1 | grep -q 'Address: 192.168.200.50'" >/dev/null 2>&1; then
+		resolved=1
+		break
+	fi
+	sleep 2
+done
+if [ "$resolved" = 1 ]; then ok "LAN devices resolve it through the router at once"; else not_ok "LAN devices resolve it through the router at once"; fi
 check "a duplicate name is refused" \
 	"ubus call supacudy host_set '{\"id\":\"\",\"name\":\"NAS.home\",\"ip\":\"192.168.200.51\"}' | grep -q host_exists"
 check "a malformed name is rejected as invalid" \

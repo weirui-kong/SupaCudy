@@ -10,6 +10,7 @@
 
 import { access } from 'fs';
 import { INVALID, NOT_FOUND, uci, run, run_later, fail, ipv4_to_int } from 'supacudy.util';
+import { CLEAR_CACHE_CMD } from 'supacudy.adguard';
 
 const MODES = ['auto', 'manual', 'encrypted'];
 const PROXY = '/etc/init.d/https-dns-proxy';
@@ -79,7 +80,7 @@ function dns_rebind_set(req) {
 		return req.error(NOT_FOUND);
 	cur.set('dhcp', section, 'rebind_protection', req.args.enabled ? '1' : '0');
 	cur.commit('dhcp');
-	run_later('/etc/init.d/dnsmasq restart', 1);
+	run_later(`/etc/init.d/dnsmasq restart; ${CLEAR_CACHE_CMD}`, 1);
 	return { applied: true };
 }
 
@@ -100,7 +101,7 @@ function host_set(req) {
 	cur.set('dhcp', id, 'name', a.name);
 	cur.set('dhcp', id, 'ip', a.ip);
 	cur.commit('dhcp');
-	run_later('/etc/init.d/dnsmasq reload', 1);
+	run_later(`/etc/init.d/dnsmasq reload; ${CLEAR_CACHE_CMD}`, 1);
 	return { id };
 }
 
@@ -113,7 +114,7 @@ function host_delete(req) {
 		return req.error(NOT_FOUND);
 	cur.delete('dhcp', id);
 	cur.commit('dhcp');
-	run_later('/etc/init.d/dnsmasq reload', 1);
+	run_later(`/etc/init.d/dnsmasq reload; ${CLEAR_CACHE_CMD}`, 1);
 	return { deleted: true };
 }
 
@@ -188,8 +189,8 @@ function dns_set(req) {
 	cur.commit('dhcp');
 	cur.commit('supacudy');
 	run_later(a.mode == 'encrypted'
-		? `${PROXY} enable; ${PROXY} restart`
-		: '/etc/init.d/dnsmasq restart', 1);
+		? `${PROXY} enable; ${PROXY} restart; ${CLEAR_CACHE_CMD}`
+		: `/etc/init.d/dnsmasq restart; ${CLEAR_CACHE_CMD}`, 1);
 	return { applied: true };
 }
 
