@@ -40,7 +40,11 @@
     const ok = (await apply(call)) !== null;
     busy = false;
     confirmLogout = false;
-    if (ok) setTimeout(load, 3000);
+    // Settings are stored at once; the daemon's state follows a moment later.
+    if (ok) {
+      await load();
+      setTimeout(load, 3000);
+    }
   }
 
   const loginUrl = $derived(safeLoginUrl(ts?.login_url ?? null));

@@ -81,12 +81,12 @@
   function setOptions(change: Partial<VpnOptions>) {
     if (!vpn) return;
     const next = { ...vpnOptionsOf(vpn), ...change };
-    run('options', () => setVpnOptions(next));
+    return run('options', () => setVpnOptions(next));
   }
 
   function toggleDevice(mac: string, on: boolean) {
     if (!vpn) return;
-    setOptions({ devices: on ? [...vpn.devices, mac] : vpn.devices.filter((d) => d !== mac) });
+    return setOptions({ devices: on ? [...vpn.devices, mac] : vpn.devices.filter((d) => d !== mac) });
   }
 
   const destinationLines = $derived(destinationsText.split(/[\s,]+/).filter(Boolean));
@@ -186,45 +186,48 @@
 
     <Card title={t('vpn.options')}>
       <div class="options">
-        {#if ovpnActive}<p class="lead">{t('vpn.route_ovpn')}</p>{/if}
-        <Segmented
-          label={t('vpn.route_mode')}
-          options={routeOptions}
-          value={vpn.route_mode}
-          onchange={(v: VpnRouteMode) => setOptions({ route_mode: v })}
-        />
-        {#if vpn.route_mode === 'selected'}
-          <fieldset class="devices">
-            <legend>{t('vpn.route_devices')}</legend>
-            {#if routeDevices.length === 0}
-              <p class="lead">{t('clients.none_online')}</p>
+        {#if ovpnActive}
+          <p class="lead">{t('vpn.route_ovpn')}</p>
+        {:else}
+          <Segmented
+            label={t('vpn.route_mode')}
+            options={routeOptions}
+            value={vpn.route_mode}
+            onchange={(v: VpnRouteMode) => setOptions({ route_mode: v })}
+          />
+          {#if vpn.route_mode === 'selected'}
+            <fieldset class="devices">
+              <legend>{t('vpn.route_devices')}</legend>
+              {#if routeDevices.length === 0}
+                <p class="lead">{t('clients.none_online')}</p>
+              {/if}
+              {#each routeDevices as d (d.mac)}
+                <Switch label={d.label} checked={vpn.devices.includes(d.mac)} onchange={(on) => toggleDevice(d.mac, on)} />
+              {/each}
+              <p class="lead">{t('vpn.route_selected_dns')}</p>
+            </fieldset>
+            <label class="area">
+              <span>{t('vpn.destinations')}</span>
+              <span class="lead">{vpn.domains_supported ? t('vpn.destinations_hint') : t('vpn.destinations_hint_ip')}</span>
+              <textarea bind:value={destinationsText} rows="4" spellcheck="false" autocomplete="off" aria-invalid={badDestination ? 'true' : undefined}></textarea>
+            </label>
+            {#if badDestination}
+              <p class="bad" role="alert">{t('vpn.destination_bad', { value: badDestination })}</p>
             {/if}
-            {#each routeDevices as d (d.mac)}
-              <Switch label={d.label} checked={vpn.devices.includes(d.mac)} onchange={(on) => toggleDevice(d.mac, on)} />
-            {/each}
-            <p class="lead">{t('vpn.route_selected_dns')}</p>
-          </fieldset>
-          <label class="area">
-            <span>{t('vpn.destinations')}</span>
-            <span class="lead">{vpn.domains_supported ? t('vpn.destinations_hint') : t('vpn.destinations_hint_ip')}</span>
-            <textarea bind:value={destinationsText} rows="4" spellcheck="false" autocomplete="off" aria-invalid={badDestination ? 'true' : undefined}></textarea>
-          </label>
-          {#if badDestination}
-            <p class="bad" role="alert">{t('vpn.destination_bad', { value: badDestination })}</p>
+            <div class="actions">
+              <Button
+                disabled={!destinationsChanged || !!badDestination}
+                busy={busy === 'options'}
+                onclick={() => setOptions({ destinations: destinationLines })}
+              >
+                {t('common.apply')}
+              </Button>
+            </div>
           {/if}
-          <div class="actions">
-            <Button
-              disabled={!destinationsChanged || !!badDestination}
-              busy={busy === 'options'}
-              onclick={() => setOptions({ destinations: destinationLines })}
-            >
-              {t('common.apply')}
-            </Button>
-          </div>
         {/if}
         <Switch
           label={t('vpn.kill_switch')}
-          description={vpn.route_mode === 'selected' ? t('vpn.kill_switch_selected_hint') : t('vpn.kill_switch_hint')}
+          description={!ovpnActive && vpn.route_mode === 'selected' ? t('vpn.kill_switch_selected_hint') : t('vpn.kill_switch_hint')}
           checked={vpn.kill_switch}
           onchange={(v) => setOptions({ kill_switch: v })}
         />

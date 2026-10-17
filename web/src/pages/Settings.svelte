@@ -8,6 +8,7 @@
   import Icon from '../components/Icon.svelte';
   import PasswordCard from './settings/PasswordCard.svelte';
   import TimeCard from './settings/TimeCard.svelte';
+  import WanAccessCard from './settings/WanAccessCard.svelte';
   import { t } from '../lib/i18n/index.svelte';
 
   let { onlogout }: { onlogout: () => void } = $props();
@@ -20,6 +21,7 @@
 
   <TimeCard />
   <PasswordCard />
+  <WanAccessCard />
 
   <Card title={t('settings.session')}>
     <div class="session">

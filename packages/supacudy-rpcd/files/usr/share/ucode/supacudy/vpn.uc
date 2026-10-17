@@ -476,6 +476,28 @@ function write_openvpn(cur, id, enabled) {
 // AdGuard Home answers repeated lookups from its cache, which dnsmasq then
 // never sees, so the cache is cleared for the websites routed through the
 // VPN to be learned again (and with the VPN's DNS to take effect at once).
+const UPLINKS = [ 'wan', 'wan6', 'wwan', 'wwan6', 'tethering', 'tethering6' ];
+
+// Connections already open keep their path: the firewall accepts
+// established flows before any rule that would send them elsewhere, so they
+// would keep bypassing the tunnel (or stay in it after disconnecting). They
+// are reset so devices reconnect along the new path: those masqueraded on an
+// uplink's address, and those from the LAN's public IPv6 prefixes.
+function reset_flows_cmd() {
+	const cmds = [];
+	for (let iface in UPLINKS) {
+		const st = ubus().call(`network.interface.${iface}`, 'status');
+		for (let a in [ ...(st?.['ipv4-address'] ?? []), ...(st?.['ipv6-address'] ?? []) ])
+			if (is_ip(a.address))
+				push(cmds, `conntrack -D -f ${index(a.address, ':') >= 0 ? 'ipv6' : 'ipv4'} --reply-dst ${a.address}`);
+	}
+	const lan = ubus().call('network.interface.lan', 'status');
+	for (let p in lan?.['ipv6-prefix-assignment'] ?? [])
+		if (is_ip(p.address) && substr(lc(p.address), 0, 2) != 'fd' && +p.mask >= 8 && +p.mask <= 128)
+			push(cmds, `conntrack -D -f ipv6 -s ${p.address}/${int(p.mask)}`);
+	return length(cmds) ? `sleep 2; ${join(' >/dev/null 2>&1; ', cmds)} >/dev/null 2>&1` : 'true';
+}
+
 function commit_all(cur, tunnel_changed, websites_changed) {
 	for (let c in [ 'network', 'firewall', 'dhcp', 'supacudy' ])
 		cur.commit(c);
@@ -489,7 +511,7 @@ function commit_all(cur, tunnel_changed, websites_changed) {
 		const wg = cur.get('network', IFACE, 'proto') == 'wireguard';
 		cmd += `; /etc/init.d/openvpn restart${wg ? `; ifup ${IFACE}` : ''}`;
 	}
-	run_later(`${cmd}; ${CLEAR_CACHE_CMD}`, 1);
+	run_later(`${cmd}; ${reset_flows_cmd()}; ${CLEAR_CACHE_CMD}`, 1);
 }
 
 function vpn_profile_set(req) {

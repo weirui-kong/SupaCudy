@@ -127,7 +127,8 @@
         description={t('dns.rebind_hint')}
         checked={settings.rebind_protection}
         onchange={async (v) => {
-          if (await apply(() => setRebindProtection(v))) load();
+          await apply(() => setRebindProtection(v));
+          await load();
         }}
       />
     </Card>

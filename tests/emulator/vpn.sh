@@ -32,11 +32,17 @@ check "the profile is saved" \
 check "saved keys are not handed back to the UI" \
 	"! ubus call supacudy vpn_get | grep -q oGwIsQXe && ubus call supacudy vpn_get | grep -q '\"has_preshared_key\": true'"
 
+# Any address beyond the WAN's own subnet follows the default route.
+LAPTOP_IP="\$($LAPTOP ip -4 -o addr show dev eth0 | sed -n 's/.* inet \\([0-9.]*\\).*/\\1/p')"
+WAN_FLOW="conntrack -L -p icmp -s $LAPTOP_IP --reply-dst 10.250.2.15 2>/dev/null | grep -q 'dst=203.0.113.9'"
+check "the laptop has a connection open through the WAN" \
+	"($LAPTOP ping -c 60 -i 1 203.0.113.9 >/dev/null 2>&1 </dev/null &) ; sleep 2; $WAN_FLOW"
 check "connecting is accepted" "ubus call supacudy vpn_connect \"{\\\"id\\\":\\\"\$(cat /tmp/vpn-id)\\\"}\" | grep -q applied"
 eventually "the tunnel completes a handshake with the server" \
 	"$SERVER wg show wg0 latest-handshakes | awk '{exit !(\$2 > 0)}' &&
 	 ubus call supacudy vpn_get | jsonfilter -e @.status.handshake | grep -qv '^0$'"
 eventually "all traffic is routed into the tunnel" "ip route show default | grep -q 'dev vpn'"
+eventually "the connection opened before is reset, so nothing keeps leaving through the WAN" "! $WAN_FLOW"
 eventually "LAN devices reach the server's tunnel address" "$LAPTOP ping -c1 -W2 10.250.30.1"
 check "IPv6 cannot bypass a tunnel without an IPv6 address" \
 	"ubus call supacudy vpn_get | jsonfilter -e @.ipv6 | grep -qx blocked &&
@@ -60,10 +66,16 @@ check "with the kill switch, the VPN's DNS may only be used through the tunnel" 
 eventually "the DNS rule is loaded" "nft list chain inet fw4 output_wan | grep -q 10.250.30.53"
 # The interface going away, not just the server: then the route to the VPN's
 # DNS server falls back to the WAN, which is where a lookup would leak.
+# Counted after the firewall in a table of the test's own: ifdown makes fw4
+# reload, which would reset the counters of its own rules.
 check "with the tunnel gone, the router's lookups to it are rejected instead of leaving through the WAN" \
-	"count() { nft list chain inet fw4 output_wan | sed -n '/10.250.30.53/s/.*packets \\([0-9]*\\).*/\\1/p' | awk '{n += \$1} END {print n + 0}'; }
-	 ifdown vpn; sleep 2; before=\$(count); nslookup example.org 10.250.30.53 >/dev/null 2>&1; after=\$(count); ifup vpn;
-	 [ \"\$after\" -gt \"\$before\" ]"
+	"nft delete table inet emu_leak 2>/dev/null; nft add table inet emu_leak &&
+	 nft add chain inet emu_leak post '{ type filter hook postrouting priority 100; policy accept; }' &&
+	 nft add rule inet emu_leak post oifname eth0 ip daddr 10.250.30.53 counter &&
+	 ifdown vpn; sleep 2; via_wan=0; refused=0;
+	 ip route get 10.250.30.53 | grep -q 'dev eth0' && via_wan=1; nslookup example.org 10.250.30.53 >/dev/null 2>&1 || refused=1;
+	 leaked=\$(nft list chain inet emu_leak post | sed -n 's/.*packets \\([0-9]*\\).*/\\1/p'); ifup vpn; nft delete table inet emu_leak;
+	 [ \$via_wan = 1 ] && [ \$refused = 1 ] && [ \"\$leaked\" = 0 ]"
 eventually "the tunnel is back" "ip route show default | grep -q 'dev vpn' && $LAPTOP ping -c1 -W2 10.250.30.1"
 check "the VPN server's name is looked up through the uplink's DNS, which the rule leaves alone" \
 	"uci set supacudy.$VPN_ID.endpoint_host=wg.emu.test && uci commit supacudy && $(options true false) &&
@@ -140,7 +152,7 @@ check "disconnecting is accepted" "ubus call supacudy vpn_disconnect | grep -q a
 check "the IPv6 block is lifted" "! uci -q get firewall.supacudy_vpn_no6 && ubus call supacudy vpn_get | grep -q '\"ipv6\": null'"
 eventually "the tunnel, its DNS and its firewall changes are gone" \
 	"! ip link show vpn && ! uci -q get network.vpn && ! grep -q '^server=10.250.2.3$' $DNSMASQ_CONF &&
-	 ! uci show firewall | grep -q \"enabled='0'\" && ! uci -q get firewall.supacudy_vpn_lan"
+	 ! uci show firewall | grep -v '^firewall\\.supacudy_wan_' | grep -q \"enabled='0'\" && ! uci -q get firewall.supacudy_vpn_lan"
 eventually "LAN devices use the WAN directly again" \
 	"$LAPTOP ping -c1 -W2 10.250.2.2 && ! ip route get 10.250.30.1 | grep -q 'dev vpn'"
 check "the profile is deleted" \

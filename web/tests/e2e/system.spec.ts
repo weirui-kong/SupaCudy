@@ -100,6 +100,44 @@ test.describe('settings: admin password', () => {
   });
 });
 
+test.describe('settings: access from the WAN', () => {
+  test.beforeEach(async ({ page }, testInfo) => {
+    await openPage(page, testInfo, 'settings', messages(testInfo).nav.settings);
+  });
+
+  test('shows the web UI open and SSH closed by default', async ({ page }, testInfo) => {
+    const m = messages(testInfo);
+    const wan = card(page, m.settings.wan_access);
+    await expect(wan.getByRole('switch', { name: m.settings.wan_webui })).toBeChecked();
+    await expect(wan.getByRole('switch', { name: m.settings.wan_ssh })).not.toBeChecked();
+    await expect(wan.getByText(m.settings.wan_exposed)).toBeVisible();
+    await expectPageQuality(page);
+  });
+
+  test('switches SSH and the web UI independently', async ({ page, router }, testInfo) => {
+    const m = messages(testInfo);
+    const wan = card(page, m.settings.wan_access);
+    await wan.getByRole('switch', { name: m.settings.wan_ssh }).check();
+    await expect(page.getByRole('status').filter({ hasText: m.common.applied })).toBeVisible();
+    expect(router.wanAccess).toEqual({ webui: true, ssh: true });
+
+    await wan.getByRole('switch', { name: m.settings.wan_webui }).uncheck();
+    await expect.poll(() => router.wanAccess).toEqual({ webui: false, ssh: true });
+    await wan.getByRole('switch', { name: m.settings.wan_ssh }).uncheck();
+    await expect.poll(() => router.wanAccess).toEqual({ webui: false, ssh: false });
+    await expect(wan.getByText(m.settings.wan_exposed)).toBeHidden();
+  });
+
+  test('a refused change puts the switch back', async ({ page, router }, testInfo) => {
+    const m = messages(testInfo);
+    router.failNext('wan_access_set', { status: 0, data: { error: 'something_new' } });
+    const wan = card(page, m.settings.wan_access);
+    await wan.getByRole('switch', { name: m.settings.wan_ssh }).check();
+    await expect(wan.getByRole('switch', { name: m.settings.wan_ssh })).not.toBeChecked();
+    expect(router.wanAccess).toEqual({ webui: true, ssh: false });
+  });
+});
+
 test.describe('maintenance', () => {
   test.beforeEach(async ({ page }, testInfo) => {
     await page.clock.install();

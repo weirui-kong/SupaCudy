@@ -11,15 +11,34 @@ test.describe('ad blocking', () => {
     await openPage(page, testInfo, 'adblock', messages(testInfo).nav.adblock);
   });
 
-  test('is on by default and shows what AdGuard Home reports', async ({ page }, testInfo) => {
+  test('is on by default, with statistics and the query log off', async ({ page }, testInfo) => {
     const m = messages(testInfo);
     await expect(page.getByRole('switch', { name: m.adblock.enable })).toBeChecked();
     const stats = card(page, m.adblock.stats);
+    await expect(stats.getByRole('switch', { name: m.adblock.keep_stats })).not.toBeChecked();
+    await expect(stats.getByRole('switch', { name: m.adblock.keep_querylog })).not.toBeChecked();
+    await expect(stats.getByText(m.adblock.stats_off)).toBeVisible();
+    await expect(stats).not.toContainText('ads.example.com');
+    await expectPageQuality(page);
+  });
+
+  test('turns statistics and the query log on separately and shows what AdGuard Home reports', async ({ page, router }, testInfo) => {
+    const m = messages(testInfo);
+    const stats = card(page, m.adblock.stats);
+    await stats.getByRole('switch', { name: m.adblock.keep_stats }).check();
+    await expect(stats.getByRole('switch', { name: m.adblock.keep_stats })).toBeChecked();
+    expect(router.adguard.logging).toEqual({ statistics: true, querylog: false });
     await expect(stats).toContainText('ads.example.com');
     const nf = new Intl.NumberFormat(testInfo.project.use.locale);
     await expect(stats).toContainText(fill(m.adblock.blocked_value, { count: nf.format(1234), pct: 10 }));
     await expect(page.getByText(fill(m.adblock.rules_count, { count: nf.format(185651) }))).toBeVisible();
     await expectPageQuality(page);
+
+    await stats.getByRole('switch', { name: m.adblock.keep_querylog }).check();
+    await expect.poll(() => router.adguard.logging).toEqual({ statistics: true, querylog: true });
+    await stats.getByRole('switch', { name: m.adblock.keep_stats }).uncheck();
+    await expect.poll(() => router.adguard.logging).toEqual({ statistics: false, querylog: true });
+    await expect(stats.getByText(m.adblock.stats_off)).toBeVisible();
   });
 
   test('shows a list added on the AdGuard Home page', async ({ page, router }) => {
@@ -68,6 +87,16 @@ test.describe('ad blocking', () => {
     await rules.getByRole('button', { name: m.common.apply }).click();
     await expect.poll(() => router.adguard.rules).toEqual(['||ads.test^', '@@||ok.example^']);
     await expect(rules.getByLabel(m.adblock.rules)).toHaveValue('||ads.test^\n@@||ok.example^');
+  });
+
+  test('keeps the switches as they are when AdGuard Home refuses', async ({ page, router }, testInfo) => {
+    const m = messages(testInfo);
+    router.failNext('adguard_logging_set', { status: 0, data: { error: 'adguard_refused' } });
+    const stats = card(page, m.adblock.stats);
+    await stats.getByRole('switch', { name: m.adblock.keep_querylog }).check();
+    await expect(page.getByRole('alert')).toContainText(m.errors.reasons.adguard_refused);
+    await expect(stats.getByRole('switch', { name: m.adblock.keep_querylog })).not.toBeChecked();
+    expect(router.adguard.logging).toEqual({ statistics: false, querylog: false });
   });
 
   test('pauses blocking', async ({ page, router }, testInfo) => {
@@ -138,9 +167,11 @@ test.describe('ad blocking', () => {
 
   test('warns before turning AdGuard Home off', async ({ page, router }, testInfo) => {
     const m = messages(testInfo);
-    await page.getByRole('switch', { name: m.adblock.enable }).uncheck();
+    // The switch stays on until the user confirms.
+    await page.getByRole('switch', { name: m.adblock.enable }).click();
     const confirm = page.getByRole('dialog', { name: m.adblock.disable_title });
     await expect(confirm).toContainText(m.adblock.disable_consequence);
+    await expect(page.getByRole('switch', { name: m.adblock.enable })).toBeChecked();
     await confirm.getByRole('button', { name: m.adblock.disable }).click();
     await expect.poll(() => router.adguard.enabled).toBe(false);
   });

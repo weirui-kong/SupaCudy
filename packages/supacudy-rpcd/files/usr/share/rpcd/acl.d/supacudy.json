@@ -15,6 +15,7 @@
 					"internet_status",
 					"wan_get",
 					"repeater_saved",
+					"repeater_status",
 					"time_get",
 					"firmware_check",
 					"setup_status",
@@ -29,7 +30,8 @@
 					"rescue_get",
 					"adguard_get",
 					"tailscale_get",
-					"uplinks_get"
+					"uplinks_get",
+					"wan_access_get"
 				]
 			}
 		},
@@ -90,10 +92,12 @@
 					"adguard_list_set",
 					"adguard_list_remove",
 					"adguard_rules_set",
+					"adguard_logging_set",
 					"adguard_web_set",
 					"tailscale_set",
 					"tailscale_logout",
-					"uplinks_set"
+					"uplinks_set",
+					"wan_access_set"
 				]
 			},
 			"cgi-io": [

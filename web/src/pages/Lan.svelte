@@ -122,6 +122,7 @@
     confirmMove = false;
     if (!result) return;
     if (result.address_changed) movedTo = result.ipaddr;
+    else await load();
     // The network restarts a moment after the reply; read back afterwards.
     setTimeout(load, 3000);
   }

@@ -64,6 +64,24 @@ function prefixOf(netmask: string): number | null {
   return null;
 }
 
+interface EapArgs {
+  method: string;
+  identity: string;
+  anonymous_identity: string;
+  password: string;
+  phase2: string;
+  validate: boolean;
+  domain: string;
+}
+
+interface SavedRepeater {
+  ssid: string;
+  encryption: string;
+  key: string;
+  eap?: EapArgs | null;
+  last_used: number;
+}
+
 export class MockRouter {
   sessions = new Set<string>();
   calls: { method: string; args: Args }[] = [];
@@ -382,14 +400,21 @@ export class MockRouter {
     connected: false,
     auto_switch: true,
     force_20mhz: false,
-    saved: [{ ssid: 'Cafe-Free', encryption: 'none', key: '', last_used: 1_760_000_000 }],
+    saved: [{ ssid: 'Cafe-Free', encryption: 'none', key: '', last_used: 1_760_000_000 }] as SavedRepeater[],
+    // What the next join ends in, and how many status reads it takes.
+    joinOutcome: 'connected' as 'connected' | 'wrong_key' | 'auth_failed' | 'certificate' | 'rejected' | 'not_found' | 'no_address' | 'timeout',
+    joinPolls: 1,
+    joinState: 'idle' as 'idle' | 'connecting' | 'connected' | 'failed',
+    pollsLeft: 0,
   };
 
   scan = [
     { ssid: 'Hotel-WiFi', bssid: '02:00:00:00:00:a1', band: '2g', channel: 1, signal: -52, encryption: 'psk2' },
-    { ssid: 'Hotel-WiFi', bssid: '02:00:00:00:00:a2', band: '5g', channel: 36, signal: -70, encryption: 'psk2' },
+    { ssid: 'Hotel-WiFi', bssid: '02:00:00:00:00:a2', band: '5g', channel: 36, signal: -66, encryption: 'psk2' },
     { ssid: 'Cafe-Free', bssid: '02:00:00:00:00:b1', band: '2g', channel: 11, signal: -78, encryption: 'none' },
     { ssid: 'Corp-Secure', bssid: '02:00:00:00:00:c1', band: '5g', channel: 149, signal: -60, encryption: 'enterprise' },
+    { ssid: 'Corp-Secure', bssid: '02:00:00:00:00:c2', band: '2g', channel: 6, signal: -58, encryption: 'enterprise' },
+    { ssid: 'Old-Lab', bssid: '02:00:00:00:00:d1', band: '2g', channel: 3, signal: -82, encryption: 'wep' },
   ];
 
   m_internet_status() {
@@ -481,13 +506,42 @@ export class MockRouter {
       return { status: INVALID };
     const saved = this.repeater.saved.find((n) => n.ssid === a.ssid);
     const key = a.key || saved?.key || '';
-    const open = a.encryption === 'none' || a.encryption === 'owe';
-    if (!open && (key.length < 8 || key.length > 63)) return this.rejected('key_invalid');
+    let eap: EapArgs | null = null;
+    if (a.encryption === 'enterprise') {
+      eap = a.eap as EapArgs;
+      const phase2: Record<string, string[]> = { peap: ['MSCHAPV2', 'GTC'], ttls: ['MSCHAPV2', 'PAP'] };
+      if (!eap || !phase2[eap.method]?.includes(eap.phase2) || typeof eap.identity !== 'string' || !eap.identity ||
+          typeof eap.password !== 'string' || typeof eap.anonymous_identity !== 'string' || typeof eap.validate !== 'boolean' ||
+          typeof eap.domain !== 'string' || (eap.validate && !/^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$/.test(eap.domain)))
+        return { status: INVALID };
+      eap = { ...eap, password: eap.password || saved?.eap?.password || '' };
+      if (!eap.password) return this.rejected('eap_password_needed');
+    } else if (a.encryption !== 'none' && a.encryption !== 'owe' && (key.length < 8 || key.length > 63)) {
+      return this.rejected('key_invalid');
+    }
     const band = (a.band || '2g') as '2g' | '5g';
-    Object.assign(this.repeater, { ssid: a.ssid, band, enabled: true, connected: true });
+    const ok = this.repeater.joinOutcome === 'connected';
+    Object.assign(this.repeater, {
+      ssid: a.ssid, band, enabled: true, connected: ok, joinState: 'connecting', pollsLeft: this.repeater.joinPolls,
+    });
     for (const r of this.wifi.radios) r.locked = r.band === band ? 'repeater' : null;
-    if (a.save && !saved) this.repeater.saved.push({ ssid: a.ssid, encryption: a.encryption, key, last_used: 1_760_000_100 });
+    if (a.save) {
+      const entry = { ssid: a.ssid, encryption: a.encryption, key: eap ? '' : key, eap, last_used: 1_760_000_100 };
+      if (saved) Object.assign(saved, entry);
+      else this.repeater.saved.push(entry);
+    }
     return this.ok({ applied: true });
+  }
+
+  m_repeater_status() {
+    const r = this.repeater;
+    if (!r.enabled) return this.ok({ state: 'idle', ssid: null, reason: null, ipaddr: null });
+    if (r.joinState === 'connecting' && r.pollsLeft-- <= 0) r.joinState = r.joinOutcome === 'connected' ? 'connected' : 'failed';
+    return this.ok({
+      state: r.joinState, ssid: r.ssid,
+      reason: r.joinState === 'failed' ? r.joinOutcome : null,
+      ipaddr: r.joinState === 'connected' ? '10.250.11.110/24' : null,
+    });
   }
 
   m_repeater_disconnect() {
@@ -498,7 +552,9 @@ export class MockRouter {
 
   m_repeater_saved() {
     return this.ok({
-      networks: this.repeater.saved.map(({ ssid, encryption, last_used }) => ({ ssid, encryption, last_used })),
+      networks: this.repeater.saved.map(({ ssid, encryption, last_used, eap }) => ({
+        ssid, encryption, last_used, eap: eap ? { ...eap, password: '' } : null,
+      })),
       auto_switch: this.repeater.auto_switch,
       force_20mhz: this.repeater.force_20mhz,
     });
@@ -869,6 +925,18 @@ export class MockRouter {
     return this.ok({ applied: true });
   }
 
+  wanAccess = { webui: true, ssh: false };
+
+  m_wan_access_get() {
+    return this.ok({ ...this.wanAccess });
+  }
+
+  m_wan_access_set(a: Args) {
+    if (typeof a.webui !== 'boolean' || typeof a.ssh !== 'boolean') return { status: INVALID };
+    this.wanAccess = { webui: a.webui, ssh: a.ssh };
+    return this.ok({ applied: true });
+  }
+
   offload = 'off';
 
   m_offload_set(a: Args) {
@@ -963,6 +1031,7 @@ export class MockRouter {
     rules: [] as string[],
     web: { enabled: false, user: 'root' as string | null, port: 3000, synced: false },
     webHash: null as string | null,
+    logging: { statistics: false, querylog: false },
   };
 
   m_adguard_get() {
@@ -975,6 +1044,7 @@ export class MockRouter {
       suggested: AG_CATALOG.filter((c) => !a.filters.some((f) => f.url === c.url)),
       rules: up ? [...a.rules] : null,
       web: { ...a.web },
+      logging: up ? { ...a.logging } : null,
       stats: up ? {
         queries: 12345, blocked: 1234, avg_ms: 7,
         top_blocked: [{ name: 'ads.example.com', count: 420 }, { name: 'tracker.example.net', count: 99 }],
@@ -1025,6 +1095,13 @@ export class MockRouter {
     const before = this.adguard.filters.length;
     this.adguard.filters = this.adguard.filters.filter((f) => f.url !== a.url);
     return before === this.adguard.filters.length ? this.rejected('adguard_refused') : this.ok({ applied: true });
+  }
+
+  m_adguard_logging_set(a: Args) {
+    if (typeof a.statistics !== 'boolean' || typeof a.querylog !== 'boolean') return { status: INVALID };
+    if (!this.agReady()) return this.rejected('adguard_not_running');
+    this.adguard.logging = { statistics: a.statistics, querylog: a.querylog };
+    return this.ok({ applied: true });
   }
 
   m_adguard_rules_set(a: Args) {

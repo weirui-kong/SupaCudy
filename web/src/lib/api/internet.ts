@@ -92,8 +92,27 @@ export interface ScannedNetwork {
   current: boolean;
 }
 
+export const EAP_METHODS = ['peap', 'ttls'] as const;
+export type EapMethod = (typeof EAP_METHODS)[number];
+export type EapPhase2 = 'MSCHAPV2' | 'GTC' | 'PAP';
+export const EAP_PHASE2: Record<EapMethod, readonly EapPhase2[]> = { peap: ['MSCHAPV2', 'GTC'], ttls: ['MSCHAPV2', 'PAP'] };
+
+/** WPA2-Enterprise login. The server certificate is checked against the
+ *  router's trusted authorities and `domain` when `validate` is on. */
+export interface EapSettings {
+  method: EapMethod;
+  identity: string;
+  anonymous_identity: string;
+  /** '' keeps the saved password. */
+  password: string;
+  phase2: EapPhase2;
+  validate: boolean;
+  domain: string;
+}
+
 export interface SavedNetworks {
-  networks: { ssid: string; encryption: StaEncryption; last_used: number }[];
+  /** eap comes without its password. */
+  networks: { ssid: string; encryption: StaEncryption; last_used: number; eap: EapSettings | null }[];
   auto_switch: boolean;
   force_20mhz: boolean;
 }
@@ -105,6 +124,16 @@ export interface ConnectSettings {
   key: string;
   band: Band | '';
   save: boolean;
+  eap?: EapSettings;
+}
+
+export type JoinFailure = 'wrong_key' | 'auth_failed' | 'certificate' | 'rejected' | 'not_found' | 'no_address' | 'timeout';
+
+export interface JoinStatus {
+  state: 'idle' | 'connecting' | 'connected' | 'failed';
+  ssid: string | null;
+  reason: JoinFailure | null;
+  ipaddr: string | null;
 }
 
 export const getInternetStatus = () => supacudy<InternetStatus>('internet_status');
@@ -112,6 +141,7 @@ export const getWan = () => supacudy<WanConfig>('wan_get');
 export const setWan = (settings: WanSettings) => supacudy<{ applied: boolean }>('wan_set', settings);
 export const scanNetworks = () => supacudy<{ networks: ScannedNetwork[] }>('repeater_scan');
 export const connectRepeater = (settings: ConnectSettings) => supacudy<{ applied: boolean }>('repeater_connect', settings);
+export const getJoinStatus = () => supacudy<JoinStatus>('repeater_status');
 export const disconnectRepeater = () => supacudy<{ applied: boolean }>('repeater_disconnect');
 export const getSavedNetworks = () => supacudy<SavedNetworks>('repeater_saved');
 export const forgetNetwork = (ssid: string) => supacudy<{ forgotten: boolean }>('repeater_forget', { ssid });
@@ -120,13 +150,64 @@ export const setTethering = (enabled: boolean) => supacudy<{ applied: boolean }>
 export const setRepeaterOptions = (auto_switch: boolean, force_20mhz: boolean) =>
   supacudy<{ auto_switch: boolean; force_20mhz: boolean }>('repeater_options', { auto_switch, force_20mhz });
 
-// The router can join these; enterprise (802.1X) and WEP are not offered.
+// WEP is too weak to be offered.
 export function joinable(encryption: StaEncryption): boolean {
-  return encryption !== 'enterprise' && encryption !== 'wep';
+  return encryption !== 'wep';
 }
 
 export function needsPassword(encryption: StaEncryption): boolean {
   return encryption !== 'none' && encryption !== 'owe';
+}
+
+/** A Wi-Fi password, as opposed to an enterprise login. */
+export function usesKey(encryption: StaEncryption): boolean {
+  return needsPassword(encryption) && encryption !== 'enterprise';
+}
+
+export function validDomain(domain: string): boolean {
+  return /^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$/.test(domain);
+}
+
+export interface NetworkGroup {
+  ssid: string;
+  /** Strongest first. */
+  aps: ScannedNetwork[];
+  bands: Band[];
+  signal: number | null;
+  encryption: StaEncryption;
+  saved: boolean;
+  current: boolean;
+}
+
+const BAND_ORDER: Band[] = ['2g', '5g', '6g'];
+const strength = (n: ScannedNetwork) => n.signal ?? -999;
+
+// One entry per name, whatever the bands and access points behind it.
+export function groupNetworks(networks: ScannedNetwork[]): NetworkGroup[] {
+  const groups = new Map<string, ScannedNetwork[]>();
+  for (const n of networks) groups.set(n.ssid, [...(groups.get(n.ssid) ?? []), n]);
+  return [...groups.entries()]
+    .map(([ssid, list]) => {
+      const aps = [...list].sort((a, b) => strength(b) - strength(a));
+      return {
+        ssid, aps,
+        bands: BAND_ORDER.filter((b) => aps.some((n) => n.band === b)),
+        signal: aps[0].signal,
+        encryption: aps[0].encryption,
+        saved: aps.some((n) => n.saved),
+        current: aps.some((n) => n.current),
+      };
+    })
+    .sort((a, b) => (b.signal ?? -999) - (a.signal ?? -999));
+}
+
+/** Above this a 5 GHz access point is preferred: faster, and it leaves the
+ *  router's 2.4 GHz channel alone. */
+export const PREFER_5G_DBM = -70;
+
+export function pickAccessPoint(group: NetworkGroup): ScannedNetwork {
+  const fast = group.aps.find((n) => n.band === '5g' && strength(n) >= PREFER_5G_DBM);
+  return fast ?? group.aps[0];
 }
 
 export function signalBars(dbm: number | null): number {

@@ -59,8 +59,12 @@
     return () => clearInterval(timer);
   });
 
-  // Settings apply a moment after the reply; look again once they have.
-  const later = () => setTimeout(refresh, 4000);
+  // Settings are stored at once and shown right away; the connections they
+  // change come up a moment later, so look again then.
+  function later() {
+    setTimeout(refresh, 4000);
+    return refresh();
+  }
 
   const activeName = $derived.by(() => {
     const key = uplinkName(status?.active);
@@ -88,7 +92,7 @@
     await apply(() => setWanPortAsLan(asLan));
     busy = false;
     portConfirm = false;
-    later();
+    await later();
   }
 
   function editMac(target: MacTarget) {
@@ -98,7 +102,7 @@
 
   async function setOption(auto_switch: boolean, force_20mhz: boolean) {
     await apply(() => setRepeaterOptions(auto_switch, force_20mhz));
-    refresh();
+    await refresh();
   }
 </script>
 
@@ -231,7 +235,7 @@
         checked={status.tethering.enabled}
         onchange={async (v) => {
           await apply(() => setTethering(v));
-          later();
+          await later();
         }}
       />
     </Card>

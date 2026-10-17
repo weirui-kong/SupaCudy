@@ -27,8 +27,21 @@
     load();
   });
 
-  // wifi reload takes a few seconds; read back once the radios are up again.
-  const reload = () => setTimeout(load, 4000);
+  // Devices see one network and pick the band themselves when every radio
+  // broadcasts the same name, security and password.
+  const merged = $derived(
+    !!config && config.radios.length > 1 &&
+      config.radios.every((r) => {
+        const first = config!.radios[0].main;
+        return r.main.ssid === first.ssid && r.main.encryption === first.encryption && r.main.key === first.key;
+      }),
+  );
+
+  // Settings show at once; the radios are read again once wifi reload is done.
+  function reload() {
+    load();
+    setTimeout(load, 4000);
+  }
 </script>
 
 {#if error}<Banner kind="error">{error}</Banner>{/if}
@@ -38,10 +51,10 @@
     <Banner kind="warning">{t('wifi.no_radios')}</Banner>
   {/if}
   <div class="radios">
-    <BandsCard radios={config.radios} onsaved={reload} />
+    <BandsCard radios={config.radios} {merged} onsaved={reload} />
     {#each config.radios as radio (radio.name)}
       <div class="pair">
-        <RadioCard {radio} onsaved={reload} />
+        <RadioCard {radio} shared={merged} onsaved={reload} />
         <GuestCard {radio} subnet={config.guest_subnet} onsaved={reload} />
       </div>
     {/each}

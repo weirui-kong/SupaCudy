@@ -24,6 +24,19 @@ test.describe('remote access', () => {
     await expectPageQuality(page);
   });
 
+  test('shows and hides its options as soon as the switch moves', async ({ page, router }, testInfo) => {
+    const m = messages(testInfo);
+    Object.assign(router.tailscale, { signedIn: true });
+    const toggle = page.getByRole('switch', { name: m.remote.enable });
+    // Well before the delayed re-read, which waits for the service.
+    await toggle.check();
+    await expect(card(page, m.remote.share_title)).toBeVisible({ timeout: 1500 });
+    await expect(card(page, m.remote.tailscale)).toContainText(m.remote.state_running, { timeout: 1500 });
+    await toggle.uncheck();
+    await expect(card(page, m.remote.share_title)).toHaveCount(0, { timeout: 1500 });
+    await expect(toggle).not.toBeChecked();
+  });
+
   test('shows the connection once signed in and shares the network', async ({ page, router }, testInfo) => {
     const m = messages(testInfo);
     Object.assign(router.tailscale, { enabled: true, signedIn: true });

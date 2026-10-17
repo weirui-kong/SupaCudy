@@ -166,7 +166,71 @@ test.describe('wireless', () => {
     await page.reload();
     const toggle = card(page, m.wifi.bands_title).getByRole('switch', { name: m.wifi.bands_merge });
     await expect(toggle).toBeChecked();
-    await toggle.uncheck();
+    await toggle.click();
+    const confirm = page.getByRole('dialog', { name: m.wifi.reconnect_title });
+    await expect(confirm).toContainText(m.wifi.bands_split_reconnect);
+    await expectPageQuality(page);
+    await confirm.getByRole('button', { name: m.wifi.bands_split }).click();
     await expect.poll(() => router.wifi.radios.map((r) => r.main.ssid)).toEqual(['Home-WiFi', 'Home-WiFi-5G']);
+    await expect(toggle).not.toBeChecked();
+    await expect(card(page, fill(m.wifi.radio_title, { band: m.bands['5g'] })).getByLabel(m.wifi.ssid, { exact: true })).toHaveValue('Home-WiFi-5G');
+  });
+
+  test.describe('with the bands merged', () => {
+    test.beforeEach(async ({ page, router }) => {
+      router.wifi.radios[1].main.ssid = router.wifi.radios[0].main.ssid;
+      router.wifi.radios[1].main.key = router.wifi.radios[0].main.key;
+      router.wifi.radios[1].main.encryption = router.wifi.radios[0].main.encryption;
+      await page.reload();
+    });
+
+    test('sets the name and password once, for every band', async ({ page }, testInfo) => {
+      const m = messages(testInfo);
+      const bands = card(page, m.wifi.bands_title);
+      await expect(bands.getByRole('switch', { name: m.wifi.bands_merge })).toBeChecked();
+      await expect(bands.getByLabel(m.wifi.ssid, { exact: true })).toHaveValue('Home-WiFi');
+      for (const band of ['2g', '5g'] as const) {
+        const radio = card(page, fill(m.wifi.radio_title, { band: m.bands[band] }));
+        await expect(radio.getByLabel(m.wifi.ssid, { exact: true })).toHaveCount(0);
+        await expect(radio.getByText(fill(m.wifi.shared_hint, { ssid: 'Home-WiFi' }))).toBeVisible();
+        await expect(radio.getByRole('button', { name: m.wifi.share })).toHaveCount(0);
+      }
+      await expect(bands.getByRole('button', { name: m.wifi.share })).toBeVisible();
+      await expectPageQuality(page);
+    });
+
+    test('a new password goes to both bands and they stay merged', async ({ page, router }, testInfo) => {
+      const m = messages(testInfo);
+      const bands = card(page, m.wifi.bands_title);
+      await bands.getByLabel(m.wifi.key, { exact: true }).fill('new-shared-pass');
+      await bands.getByRole('button', { name: m.common.apply }).click();
+      await page.getByRole('dialog', { name: m.wifi.reconnect_title }).getByRole('button', { name: m.common.apply }).click();
+      await expect.poll(() => router.wifi.radios.map((r) => r.main.key)).toEqual(['new-shared-pass', 'new-shared-pass']);
+      await expect(bands.getByRole('switch', { name: m.wifi.bands_merge })).toBeChecked();
+      await expect(bands.getByLabel(m.wifi.key, { exact: true })).toHaveValue('new-shared-pass');
+      await expect(bands.getByRole('button', { name: m.common.apply })).toBeDisabled();
+    });
+
+    test('band settings change without breaking the merge', async ({ page, router }, testInfo) => {
+      const m = messages(testInfo);
+      const five = card(page, fill(m.wifi.radio_title, { band: m.bands['5g'] }));
+      await five.getByRole('button', { name: m.wifi.advanced }).click();
+      await five.getByLabel(m.wifi.txpower, { exact: true }).selectOption('low');
+      await five.getByRole('button', { name: m.common.apply }).click();
+      await expect.poll(() => router.wifi.radios[1].txpower).toBe('low');
+      expect(router.wifi.radios[1].main.ssid).toBe('Home-WiFi');
+      await expect(card(page, m.wifi.bands_title).getByRole('switch', { name: m.wifi.bands_merge })).toBeChecked();
+    });
+
+    test('cancelling the split keeps the bands merged', async ({ page, router }, testInfo) => {
+      const m = messages(testInfo);
+      const toggle = card(page, m.wifi.bands_title).getByRole('switch', { name: m.wifi.bands_merge });
+      await toggle.click();
+      const confirm = page.getByRole('dialog', { name: m.wifi.reconnect_title });
+      await confirm.getByRole('button', { name: m.common.cancel }).click();
+      await expect(confirm).toBeHidden();
+      await expect(toggle).toBeChecked();
+      expect(router.calls.filter((c) => c.method === 'wifi_set')).toHaveLength(0);
+    });
   });
 });

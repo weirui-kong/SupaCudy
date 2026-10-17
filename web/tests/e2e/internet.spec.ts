@@ -89,24 +89,38 @@ test.describe('internet', () => {
     const m = messages(testInfo);
     await card(page, m.internet.repeater).getByRole('button', { name: m.internet.choose_network }).click();
     const dialog = page.getByRole('dialog', { name: m.internet.choose_network });
-    await expect(dialog.getByText(fill(m.internet.found, { count: 3 }))).toBeVisible();
-    await expect(dialog.getByRole('button', { name: /Hotel-WiFi/ })).toHaveCount(1);
-    await expect(dialog.getByRole('button', { name: /Corp-Secure/ })).toBeDisabled();
+    await expect(dialog.getByText(fill(m.internet.found, { count: 4 }))).toBeVisible();
+    const hotel = dialog.getByRole('button', { name: /Hotel-WiFi/ });
+    await expect(hotel).toHaveCount(1);
+    await expect(hotel).toContainText(`${m.bands['2g']} · ${m.bands['5g']} · ${m.internet.security.psk2}`);
+    await expect(dialog.getByRole('button', { name: /Corp-Secure/ })).toContainText(m.internet.security.enterprise);
+    await expect(dialog.getByRole('button', { name: /Corp-Secure/ })).toBeEnabled();
+    await expect(dialog.getByRole('button', { name: /Old-Lab/ })).toContainText(m.internet.security.wep);
+    await expect(dialog.getByRole('button', { name: /Old-Lab/ })).toBeDisabled();
     await expectPageQuality(page);
-    await dialog.getByRole('button', { name: /Hotel-WiFi/ }).click();
+    await hotel.click();
 
     const join = page.getByRole('dialog', { name: fill(m.internet.join_named, { ssid: 'Hotel-WiFi' }) });
+    await expect(join).toContainText(m.internet.security.psk2);
     await join.getByLabel(m.wifi.key, { exact: true }).fill('short');
     await expect(join.getByText(m.wifi.key_too_short)).toBeVisible();
     await expect(join.getByRole('button', { name: m.internet.join, exact: true })).toBeDisabled();
     await join.getByLabel(m.wifi.key, { exact: true }).fill('hotel-guest');
     await expectPageQuality(page);
+    router.repeater.joinPolls = 2;
     await join.getByRole('button', { name: m.internet.join, exact: true }).click();
 
-    await expect(join).toBeHidden();
-    expect(router.repeater).toMatchObject({ ssid: 'Hotel-WiFi', band: '2g', enabled: true });
+    // The dialog stays and follows the join until the router reports back.
+    await expect(join.getByText(fill(m.internet.connecting_to, { ssid: 'Hotel-WiFi' }))).toBeVisible();
+    await expectPageQuality(page);
+    await expect(join.getByText(fill(m.internet.joined, { ssid: 'Hotel-WiFi' }))).toBeVisible({ timeout: 10_000 });
+    await expect(join).toContainText(fill(m.internet.joined_address, { ip: '10.250.11.110/24' }));
+    // The 5 GHz access point is strong enough, so the router uses it.
+    expect(router.repeater).toMatchObject({ ssid: 'Hotel-WiFi', band: '5g', enabled: true });
     expect(router.calls.find((c) => c.method === 'repeater_connect')?.args).toMatchObject({ key: 'hotel-guest', save: true, encryption: 'psk2' });
-    await expect(page.getByText(fill(m.internet.connected_to, { ssid: 'Hotel-WiFi' }))).toBeVisible({ timeout: 10_000 });
+    await join.getByRole('button', { name: m.internet.done }).click();
+    await expect(join).toBeHidden();
+    await expect(card(page, m.internet.repeater).getByText(fill(m.internet.connected_to, { ssid: 'Hotel-WiFi' }))).toBeVisible({ timeout: 10_000 });
     await expect(page.getByRole('listitem').filter({ hasText: 'Hotel-WiFi' })).toBeVisible();
   });
 
@@ -118,9 +132,109 @@ test.describe('internet', () => {
     const join = page.getByRole('dialog', { name: fill(m.internet.join_named, { ssid: 'Hotel-WiFi' }) });
     await expect(join.getByLabel(m.wifi.key, { exact: true })).toHaveAttribute('placeholder', m.internet.saved_password);
     await join.getByRole('button', { name: m.internet.join, exact: true }).click();
-    await expect(join).toBeHidden();
+    await expect(join.getByText(fill(m.internet.joined, { ssid: 'Hotel-WiFi' }))).toBeVisible({ timeout: 10_000 });
     expect(router.calls.find((c) => c.method === 'repeater_connect')?.args).toMatchObject({ key: '' });
     expect(router.repeater.ssid).toBe('Hotel-WiFi');
+  });
+
+  test('says why a join failed and lets the user try again', async ({ page, router }, testInfo) => {
+    const m = messages(testInfo);
+    router.repeater.joinOutcome = 'wrong_key';
+    await card(page, m.internet.repeater).getByRole('button', { name: m.internet.choose_network }).click();
+    await page.getByRole('dialog', { name: m.internet.choose_network }).getByRole('button', { name: /Hotel-WiFi/ }).click();
+    const join = page.getByRole('dialog', { name: fill(m.internet.join_named, { ssid: 'Hotel-WiFi' }) });
+    await join.getByLabel(m.wifi.key, { exact: true }).fill('not-the-key');
+    await join.getByRole('button', { name: m.internet.join, exact: true }).click();
+
+    await expect(join.getByRole('alert')).toContainText(fill(m.internet.join_failed, { ssid: 'Hotel-WiFi' }), { timeout: 10_000 });
+    await expect(join.getByRole('alert')).toContainText(m.internet.join_reason.wrong_key);
+    await expectPageQuality(page);
+    router.repeater.joinOutcome = 'connected';
+    await join.getByRole('button', { name: m.internet.retry }).click();
+    await expect(join.getByLabel(m.wifi.key, { exact: true })).toHaveValue('not-the-key');
+    await join.getByLabel(m.wifi.key, { exact: true }).fill('hotel-guest');
+    await join.getByRole('button', { name: m.internet.join, exact: true }).click();
+    await expect(join.getByText(fill(m.internet.joined, { ssid: 'Hotel-WiFi' }))).toBeVisible({ timeout: 10_000 });
+  });
+
+  test('joins a WPA2-Enterprise network with a username and password', async ({ page, router }, testInfo) => {
+    const m = messages(testInfo);
+    await card(page, m.internet.repeater).getByRole('button', { name: m.internet.choose_network }).click();
+    await page.getByRole('dialog', { name: m.internet.choose_network }).getByRole('button', { name: /Corp-Secure/ }).click();
+    const join = page.getByRole('dialog', { name: fill(m.internet.join_named, { ssid: 'Corp-Secure' }) });
+    await expect(join).toContainText(m.internet.security.enterprise);
+    await expect(join.getByLabel(m.internet.eap_identity, { exact: true })).toBeVisible();
+    const submit = join.getByRole('button', { name: m.internet.join, exact: true });
+    await expect(submit).toBeDisabled();
+    await expect(join.getByText(m.internet.eap_no_validate)).toBeVisible();
+
+    await join.getByLabel(m.internet.eap_method, { exact: true }).selectOption('ttls');
+    await join.getByLabel(m.internet.eap_identity, { exact: true }).fill('alice');
+    await join.getByLabel(m.internet.eap_password, { exact: true }).fill('s3cret "pass"');
+    await join.getByRole('switch', { name: m.internet.eap_validate }).check();
+    await join.getByLabel(m.internet.eap_domain, { exact: true }).fill('not a domain');
+    await expect(join.getByText(m.internet.eap_domain_bad)).toBeVisible();
+    await expect(submit).toBeDisabled();
+    await join.getByLabel(m.internet.eap_domain, { exact: true }).fill('radius.example.com');
+    await join.getByRole('button', { name: m.wifi.advanced }).click();
+    await join.getByLabel(m.internet.eap_phase2, { exact: true }).selectOption('PAP');
+    await join.getByLabel(m.internet.eap_anonymous, { exact: true }).fill('anonymous@example.com');
+    await expectPageQuality(page);
+    await submit.click();
+
+    await expect(join.getByText(fill(m.internet.joined, { ssid: 'Corp-Secure' }))).toBeVisible({ timeout: 10_000 });
+    expect(router.calls.find((c) => c.method === 'repeater_connect')?.args).toMatchObject({
+      ssid: 'Corp-Secure', encryption: 'enterprise', key: '', band: '5g',
+      eap: {
+        method: 'ttls', identity: 'alice', password: 's3cret "pass"', phase2: 'PAP', anonymous_identity: 'anonymous@example.com',
+        validate: true, domain: 'radius.example.com',
+      },
+    });
+  });
+
+  test('rejoins a saved enterprise network with its login filled in', async ({ page, router }, testInfo) => {
+    const m = messages(testInfo);
+    router.repeater.saved.push({
+      ssid: 'Corp-Secure', encryption: 'enterprise', key: '', last_used: 2,
+      eap: { method: 'peap', identity: 'alice', anonymous_identity: '', password: 'saved-pass', phase2: 'MSCHAPV2', validate: true, domain: 'radius.example.com' },
+    });
+    await card(page, m.internet.repeater).getByRole('button', { name: m.internet.choose_network }).click();
+    await page.getByRole('dialog', { name: m.internet.choose_network }).getByRole('button', { name: /Corp-Secure/ }).click();
+    const join = page.getByRole('dialog', { name: fill(m.internet.join_named, { ssid: 'Corp-Secure' }) });
+    await expect(join.getByLabel(m.internet.eap_identity, { exact: true })).toHaveValue('alice');
+    await expect(join.getByLabel(m.internet.eap_password, { exact: true })).toHaveValue('');
+    await expect(join.getByLabel(m.internet.eap_password, { exact: true })).toHaveAttribute('placeholder', m.internet.saved_password);
+    await expect(join.getByLabel(m.internet.eap_domain, { exact: true })).toHaveValue('radius.example.com');
+    await join.getByRole('button', { name: m.internet.join, exact: true }).click();
+    await expect(join.getByText(fill(m.internet.joined, { ssid: 'Corp-Secure' }))).toBeVisible({ timeout: 10_000 });
+    expect(router.calls.find((c) => c.method === 'repeater_connect')?.args).toMatchObject({ eap: { identity: 'alice', password: '' } });
+  });
+
+  test('explains a server certificate that could not be verified', async ({ page, router }, testInfo) => {
+    const m = messages(testInfo);
+    router.repeater.joinOutcome = 'certificate';
+    await card(page, m.internet.repeater).getByRole('button', { name: m.internet.choose_network }).click();
+    await page.getByRole('dialog', { name: m.internet.choose_network }).getByRole('button', { name: /Corp-Secure/ }).click();
+    const join = page.getByRole('dialog', { name: fill(m.internet.join_named, { ssid: 'Corp-Secure' }) });
+    await join.getByLabel(m.internet.eap_identity, { exact: true }).fill('alice');
+    await join.getByLabel(m.internet.eap_password, { exact: true }).fill('secret');
+    await join.getByRole('switch', { name: m.internet.eap_validate }).check();
+    await join.getByLabel(m.internet.eap_domain, { exact: true }).fill('radius.example.com');
+    await join.getByRole('button', { name: m.internet.join, exact: true }).click();
+    await expect(join.getByRole('alert')).toContainText(m.internet.join_reason.certificate, { timeout: 10_000 });
+  });
+
+  test('a refused enterprise login stays in the form with the reason', async ({ page, router }, testInfo) => {
+    const m = messages(testInfo);
+    router.failNext('repeater_connect', { status: 0, data: { error: 'eap_password_needed' } });
+    await card(page, m.internet.repeater).getByRole('button', { name: m.internet.choose_network }).click();
+    await page.getByRole('dialog', { name: m.internet.choose_network }).getByRole('button', { name: /Corp-Secure/ }).click();
+    const join = page.getByRole('dialog', { name: fill(m.internet.join_named, { ssid: 'Corp-Secure' }) });
+    await join.getByLabel(m.internet.eap_identity, { exact: true }).fill('alice');
+    await join.getByLabel(m.internet.eap_password, { exact: true }).fill('secret');
+    await join.getByRole('button', { name: m.internet.join, exact: true }).click();
+    await expect(join.getByRole('alert')).toContainText(m.errors.reasons.eap_password_needed);
+    await expect(join.getByLabel(m.internet.eap_identity, { exact: true })).toHaveValue('alice');
   });
 
   test('warns before joining an open network', async ({ page, router }, testInfo) => {
@@ -255,9 +369,11 @@ test.describe('internet', () => {
   test('turns the WAN port into a LAN port after warning', async ({ page, router }, testInfo) => {
     const m = messages(testInfo);
     const ethernet = card(page, m.internet.ethernet);
-    await ethernet.getByRole('switch', { name: m.internet.wan_as_lan }).check();
+    // The switch stays off until the user confirms.
+    await ethernet.getByRole('switch', { name: m.internet.wan_as_lan }).click();
     const confirm = page.getByRole('dialog', { name: m.internet.wan_as_lan });
     await expect(confirm).toContainText(m.internet.wan_as_lan_offline);
+    await expect(ethernet.getByRole('switch', { name: m.internet.wan_as_lan })).not.toBeChecked();
     await expectPageQuality(page);
     await confirm.getByRole('button', { name: m.common.apply }).click();
     await expect.poll(() => router.wanAsLan).toBe(true);

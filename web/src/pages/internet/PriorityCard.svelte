@@ -80,7 +80,10 @@
     busy = true;
     const ok = await apply(() => setUplinks(settings));
     busy = false;
-    if (ok) setTimeout(load, 1500);
+    if (ok) {
+      await load();
+      setTimeout(load, 1500);
+    }
   }
 
   function uplinkOf(name: UplinkName): Uplink | undefined {

@@ -13,7 +13,7 @@
   import WebAccessDialog from './adblock/WebAccessDialog.svelte';
   import {
     addAdguardList, filterUrlError, getAdguard, lines, listNameOf, removeAdguardList, setAdguardEnabled,
-    setAdguardList, setAdguardProtection, setAdguardRules, setAdguardWeb, type AdguardState,
+    setAdguardList, setAdguardLogging, setAdguardProtection, setAdguardRules, setAdguardWeb, type AdguardState,
   } from '../lib/api';
   import { errorMessage } from '../lib/errors';
   import { locale, t } from '../lib/i18n/index.svelte';
@@ -54,10 +54,9 @@
     busy = false;
     confirmOff = false;
     confirmWebOff = false;
-    if (ok) {
-      if (reloadAfterMs) setTimeout(() => load(true), reloadAfterMs);
-      else await load(true);
-    }
+    // Re-read after a failure too, so the switches show what is really set.
+    await load(true);
+    if (ok && reloadAfterMs) setTimeout(() => load(true), reloadAfterMs);
     return ok;
   }
 
@@ -112,19 +111,45 @@
       </div>
     </Card>
 
-    {#if live && ag.stats}
+    {#if live && ag.logging}
+      {@const logging = ag.logging}
       <Card title={t('adblock.stats')}>
-        <dl>
-          <DataRow label={t('adblock.queries')}>{number(ag.stats.queries)}</DataRow>
-          <DataRow label={t('adblock.blocked')}>{t('adblock.blocked_value', { count: number(ag.stats.blocked), pct: blockedPct })}</DataRow>
-          <DataRow label={t('adblock.avg')}>{t('adblock.avg_value', { ms: ag.stats.avg_ms })}</DataRow>
-        </dl>
-        {#if ag.stats.top_blocked.length}
-          <h3>{t('adblock.top_blocked')}</h3>
-          <ol class="top">
-            {#each ag.stats.top_blocked as d (d.name)}<li><span>{d.name}</span><span>{number(d.count)}</span></li>{/each}
-          </ol>
-        {/if}
+        <div class="stack">
+          <Switch
+            label={t('adblock.keep_stats')}
+            description={t('adblock.keep_stats_hint')}
+            checked={logging.statistics}
+            disabled={busy}
+            onchange={(v) => change(() => setAdguardLogging({ ...logging, statistics: v }))}
+          />
+          <Switch
+            label={t('adblock.keep_querylog')}
+            description={t('adblock.keep_querylog_hint')}
+            checked={logging.querylog}
+            disabled={busy}
+            onchange={(v) => change(() => setAdguardLogging({ ...logging, querylog: v }))}
+          />
+          {#if !logging.statistics}
+            <p class="hint">{t('adblock.stats_off')}</p>
+          {:else if ag.stats}
+            <div>
+              <h3>{t('adblock.stats_period')}</h3>
+              <dl>
+                <DataRow label={t('adblock.queries')}>{number(ag.stats.queries)}</DataRow>
+                <DataRow label={t('adblock.blocked')}>{t('adblock.blocked_value', { count: number(ag.stats.blocked), pct: blockedPct })}</DataRow>
+                <DataRow label={t('adblock.avg')}>{t('adblock.avg_value', { ms: ag.stats.avg_ms })}</DataRow>
+              </dl>
+            </div>
+            {#if ag.stats.top_blocked.length}
+              <div>
+                <h3>{t('adblock.top_blocked')}</h3>
+                <ol class="top">
+                  {#each ag.stats.top_blocked as d (d.name)}<li><span>{d.name}</span><span>{number(d.count)}</span></li>{/each}
+                </ol>
+              </div>
+            {/if}
+          {/if}
+        </div>
       </Card>
     {/if}
 

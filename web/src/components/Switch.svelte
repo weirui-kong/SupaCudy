@@ -17,8 +17,21 @@
     disabled?: boolean;
     /** Keeps the label for screen readers only, e.g. inside a table row. */
     hideLabel?: boolean;
-    onchange?: (checked: boolean) => void;
+    onchange?: (checked: boolean) => unknown;
   } = $props();
+
+  // With onchange the parent owns the value: once its handler is done the
+  // switch shows what the parent has, so a refused or cancelled change
+  // moves it back even when the value itself did not change.
+  async function changed(event: Event & { currentTarget: HTMLInputElement }) {
+    const input = event.currentTarget;
+    if (!onchange) {
+      checked = input.checked;
+      return;
+    }
+    await onchange(input.checked);
+    input.checked = checked;
+  }
 
   const uid = $props.id();
   const descId = `switch-desc-${uid}`;
@@ -32,10 +45,10 @@
   <input
     type="checkbox"
     role="switch"
-    bind:checked
+    {checked}
     {disabled}
     aria-describedby={description ? descId : undefined}
-    onchange={() => onchange?.(checked)}
+    onchange={changed}
   />
   <span class="track" aria-hidden="true"><span class="thumb"></span></span>
 </label>

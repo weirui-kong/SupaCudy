@@ -12,10 +12,25 @@ LAPTOP="ip netns exec laptop"
 WWAN_IP="ubus call network.interface.wwan status | jsonfilter -e '@[\"ipv4-address\"][0].address'"
 LAPTOP_IP="$LAPTOP ip -4 -o addr show eth0 | sed 's#.* inet \\([0-9.]*\\)/.*#\\1#'"
 fetch() { echo "$UP uclient-fetch -q -T 3 -O - http://\$($WWAN_IP):$1/"; }
+SSH_BANNER="sleep 2 | $UP nc \$($WWAN_IP) 22 2>/dev/null | head -c 7 | grep -q SSH-2.0"
+wan_access() { echo "ubus call supacudy wan_access_set '{\"webui\":$1,\"ssh\":$2}' | grep -q applied"; }
 
 check "the router joins the hotel network" \
 	"ubus call supacudy repeater_connect '{\"ssid\":\"Hotel-WiFi\",\"bssid\":\"\",\"encryption\":\"psk2\",\"key\":\"hotel-guest\",\"band\":\"2g\",\"save\":false}' | grep -q applied"
 eventually "the repeater has an address in the hotel network" "$WWAN_IP | grep -q '^10.250.11.'"
+
+check "out of the box the web UI is open to the WAN and SSH is not" \
+	"ubus call supacudy wan_access_get | jsonfilter -e @.webui | grep -qx true &&
+	 ubus call supacudy wan_access_get | jsonfilter -e @.ssh | grep -qx false"
+eventually "the hotel reaches the web UI" "$(fetch 80) | grep -qi html"
+check "the hotel cannot reach SSH" "! $SSH_BANNER"
+check "a WAN access change without both switches is rejected as invalid" \
+	"! ubus call supacudy wan_access_set '{\"webui\":true}' && ! ubus call supacudy wan_access_set '{\"webui\":1,\"ssh\":false}'"
+check "SSH is opened to the WAN and the web UI closed" "$(wan_access false true)"
+eventually "the hotel reaches SSH" "$SSH_BANNER"
+eventually "the web UI is closed to the hotel" "! $(fetch 80)"
+check "SSH is closed again" "$(wan_access false false)"
+eventually "the hotel can no longer reach SSH" "! $SSH_BANNER"
 check "a web server runs on the laptop" \
 	"mkdir -p /tmp/laptop-www && echo hello-from-laptop > /tmp/laptop-www/index.html &&
 	 $LAPTOP uhttpd -p 0.0.0.0:8080 -h /tmp/laptop-www && $LAPTOP uclient-fetch -q -O - http://127.0.0.1:8080/ | grep -q hello"
@@ -47,3 +62,6 @@ check "the open port is closed and the rest cleaned up" "
 	ubus call supacudy forward_delete \"{\\\"id\\\":\\\"\$(cat /tmp/fwd-id)\\\"}\" | grep -q deleted &&
 	kill \$(pgrep -f '[u]httpd -p 0.0.0.0:8080') && ubus call supacudy repeater_disconnect | grep -q applied"
 eventually "the router's web server is closed to the hotel again" "! $(fetch 80) && ! uci show firewall | grep -q sc_"
+check "WAN access is back to the defaults" \
+	"$(wan_access true false) && [ \"\$(uci get firewall.supacudy_wan_webui.enabled)\" = 1 ] &&
+	 [ \"\$(uci get firewall.supacudy_wan_ssh.enabled)\" = 0 ]"

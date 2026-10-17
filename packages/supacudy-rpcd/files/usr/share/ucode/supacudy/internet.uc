@@ -5,7 +5,7 @@
 
 'use strict';
 
-import { readfile, readlink, lsdir } from 'fs';
+import { readfile, writefile, readlink, lsdir, mkdir, popen } from 'fs';
 import * as nl80211 from 'nl80211';
 import {
 	INVALID, NOT_FOUND, ubus, uci, run, run_later, fail, uptime,
@@ -13,7 +13,14 @@ import {
 } from 'supacudy.util';
 
 const PROTOS = ['dhcp', 'static', 'pppoe'];
-const STA_ENCRYPTIONS = ['none', 'psk2', 'psk-mixed', 'sae', 'sae-mixed', 'owe'];
+const STA_ENCRYPTIONS = ['none', 'psk2', 'psk-mixed', 'sae', 'sae-mixed', 'owe', 'enterprise'];
+// Inner authentication each outer method offers; names as netifd's "auth".
+const EAP_PHASE2 = { peap: [ 'MSCHAPV2', 'GTC' ], ttls: [ 'MSCHAPV2', 'PAP' ] };
+const EAP_TEXT_MAX = 128;
+const JOIN_FILE = '/var/run/supacudy/repeater-join';
+// How long a join may take before it counts as failed, in seconds.
+const JOIN_TIMEOUT = 45;
+const ADDRESS_TIMEOUT = 30;
 const SCAN_WAIT_MS = 3000;
 const BAND_OF = (freq) => freq < 3000 ? '2g' : (freq < 5925 ? '5g' : '6g');
 
@@ -100,11 +107,24 @@ function sta_link(ifname) {
 	return { bssid: st.mac, signal: st.sta_info?.signal ?? null };
 }
 
+function saved_eap(s) {
+	if (s.encryption != 'enterprise')
+		return null;
+	return {
+		method: s.eap_method ?? 'peap', identity: s.eap_identity ?? '', anonymous_identity: s.eap_anonymous ?? '',
+		password: s.eap_password ?? '', phase2: s.eap_phase2 ?? 'MSCHAPV2', validate: s.eap_validate == '1',
+		domain: s.eap_domain ?? ''
+	};
+}
+
 function saved_networks(cur) {
 	const out = [];
 	cur.foreach('supacudy', 'repeater', (s) => {
 		if (s.ssid)
-			push(out, { id: s['.name'], ssid: s.ssid, encryption: s.encryption ?? 'none', key: s.key ?? '', last_used: +(s.last_used ?? 0) });
+			push(out, {
+				id: s['.name'], ssid: s.ssid, encryption: s.encryption ?? 'none', key: s.key ?? '',
+				eap: saved_eap(s), last_used: +(s.last_used ?? 0)
+			});
 	});
 	return sort(out, (a, b) => b.last_used - a.last_used);
 }
@@ -489,7 +509,19 @@ function ensure_wwan(cur) {
 	set_wan_zone(cur, [ 'wwan', 'wwan6' ], true);
 }
 
-function remember(cur, ssid, encryption, key) {
+function eap_text(s, min) {
+	return type(s) == 'string' && length(s) >= min && length(s) <= EAP_TEXT_MAX && !match(s, /[[:cntrl:]]/);
+}
+
+// The password may be left empty to keep the saved one.
+function valid_eap(e) {
+	return type(e) == 'object' && e.method in keys(EAP_PHASE2) && e.phase2 in EAP_PHASE2[e.method] &&
+		eap_text(e.identity, 1) && eap_text(e.anonymous_identity, 0) && eap_text(e.password, 0) &&
+		type(e.validate) == 'bool' && type(e.domain) == 'string' &&
+		(!e.validate || match(e.domain, /^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$/) != null);
+}
+
+function remember(cur, ssid, encryption, key, eap) {
 	let section = null;
 	cur.foreach('supacudy', 'repeater', (s) => {
 		if (s.ssid == ssid)
@@ -498,10 +530,21 @@ function remember(cur, ssid, encryption, key) {
 	section ??= cur.add('supacudy', 'repeater');
 	cur.set('supacudy', section, 'ssid', ssid);
 	cur.set('supacudy', section, 'encryption', encryption);
-	if (encryption == 'none' || encryption == 'owe')
+	if (encryption == 'none' || encryption == 'owe' || encryption == 'enterprise')
 		cur.delete('supacudy', section, 'key');
 	else
 		cur.set('supacudy', section, 'key', key);
+	const saved = {
+		eap_method: eap?.method, eap_identity: eap?.identity, eap_anonymous: eap?.anonymous_identity,
+		eap_password: eap?.password, eap_phase2: eap?.phase2, eap_validate: eap ? (eap.validate ? '1' : '0') : null,
+		eap_domain: eap?.validate ? eap.domain : null
+	};
+	for (let k, v in saved) {
+		if (v != null && v != '')
+			cur.set('supacudy', section, k, v);
+		else
+			cur.delete('supacudy', section, k);
+	}
 	cur.set('supacudy', section, 'last_used', `${time()}`);
 }
 
@@ -517,7 +560,9 @@ function switch_grace(cur) {
 let last_change = 0;
 let down_since = null;
 
-function connect(cur, ssid, encryption, key, band, bssid) {
+const EAP_OPTIONS = [ 'eap_type', 'identity', 'anonymous_identity', 'password', 'auth', 'ca_cert_usesystem', 'domain_suffix_match' ];
+
+function connect(cur, ssid, encryption, key, band, bssid, eap) {
 	last_change = uptime();
 	down_since = null;
 	const radio = radio_for_band(cur, band);
@@ -530,11 +575,27 @@ function connect(cur, ssid, encryption, key, band, bssid) {
 	cur.set('wireless', 'wwan', 'mode', 'sta');
 	cur.set('wireless', 'wwan', 'network', 'wwan');
 	cur.set('wireless', 'wwan', 'ssid', ssid);
-	cur.set('wireless', 'wwan', 'encryption', encryption);
-	if (encryption == 'none' || encryption == 'owe')
+	// netifd calls WPA2-Enterprise "wpa2"; the server certificate is only
+	// checked when the user gave its domain.
+	cur.set('wireless', 'wwan', 'encryption', encryption == 'enterprise' ? 'wpa2' : encryption);
+	if (encryption == 'none' || encryption == 'owe' || encryption == 'enterprise')
 		cur.delete('wireless', 'wwan', 'key');
 	else
 		cur.set('wireless', 'wwan', 'key', key);
+	for (let o in EAP_OPTIONS)
+		cur.delete('wireless', 'wwan', o);
+	if (encryption == 'enterprise') {
+		cur.set('wireless', 'wwan', 'eap_type', eap.method);
+		cur.set('wireless', 'wwan', 'identity', eap.identity);
+		if (eap.anonymous_identity != '')
+			cur.set('wireless', 'wwan', 'anonymous_identity', eap.anonymous_identity);
+		cur.set('wireless', 'wwan', 'password', eap.password);
+		cur.set('wireless', 'wwan', 'auth', eap.phase2);
+		if (eap.validate) {
+			cur.set('wireless', 'wwan', 'ca_cert_usesystem', '1');
+			cur.set('wireless', 'wwan', 'domain_suffix_match', [ eap.domain ]);
+		}
+	}
 	if (bssid)
 		cur.set('wireless', 'wwan', 'bssid', bssid);
 	else
@@ -547,26 +608,37 @@ function connect(cur, ssid, encryption, key, band, bssid) {
 
 function repeater_connect(req) {
 	const a = req.args;
+	const enterprise = a.encryption == 'enterprise';
 	if (type(a.ssid) != 'string' || length(a.ssid) < 1 || length(a.ssid) > 32 || !(a.encryption in STA_ENCRYPTIONS) ||
 	    type(a.key) != 'string' || type(a.save) != 'bool' || !(a.band in ['2g', '5g', '6g', '']) ||
-	    (a.bssid != '' && !match(a.bssid, /^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$/)))
+	    (a.bssid != '' && !match(a.bssid, /^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$/)) || (enterprise && !valid_eap(a.eap)))
 		return req.error(INVALID);
 
 	const cur = uci();
 	let key = a.key;
+	const eap = enterprise ? { ...a.eap } : null;
 	// Reconnecting to a saved network without retyping its password.
-	if (key == '' && a.encryption != 'none' && a.encryption != 'owe')
-		for (let s in saved_networks(cur))
-			if (s.ssid == a.ssid)
-				key = s.key;
-	if (a.encryption != 'none' && a.encryption != 'owe' && (length(key) < 8 || length(key) > 63))
+	for (let s in saved_networks(cur)) {
+		if (s.ssid != a.ssid)
+			continue;
+		if (key == '' && a.encryption != 'none' && a.encryption != 'owe')
+			key = s.key;
+		if (eap && eap.password == '' && s.eap)
+			eap.password = s.eap.password;
+	}
+	if (enterprise) {
+		if (eap.password == '')
+			return fail('eap_password_needed');
+	} else if (a.encryption != 'none' && a.encryption != 'owe' && (length(key) < 8 || length(key) > 63))
 		return fail('key_invalid');
 
-	const problem = connect(cur, a.ssid, a.encryption, key, a.band, lc(a.bssid));
+	const problem = connect(cur, a.ssid, a.encryption, key, a.band, lc(a.bssid), eap);
 	if (problem)
 		return fail(problem);
 	if (a.save)
-		remember(cur, a.ssid, a.encryption, key);
+		remember(cur, a.ssid, a.encryption, key, eap);
+	mkdir('/var/run/supacudy');
+	writefile(JOIN_FILE, `${time()}`);
 	cur.commit('wireless');
 	cur.commit('network');
 	cur.commit('firewall');
@@ -588,7 +660,11 @@ function repeater_disconnect() {
 function repeater_saved() {
 	const cur = uci();
 	return {
-		networks: map(saved_networks(cur), (s) => ({ ssid: s.ssid, encryption: s.encryption, last_used: s.last_used })),
+		networks: map(saved_networks(cur), (s) => ({
+			ssid: s.ssid, encryption: s.encryption, last_used: s.last_used,
+			// Everything but the password, to fill in the form again.
+			eap: s.eap ? { ...s.eap, password: '' } : null
+		})),
 		auto_switch: cur.get('supacudy', 'main', 'repeater_auto_switch') != '0',
 		force_20mhz: cur.get('supacudy', 'main', 'repeater_20mhz') == '1'
 	};
@@ -646,8 +722,8 @@ function repeater_tick() {
 		if (!saved[n.ssid] || n.ssid == current)
 			continue;
 		const s = saved[n.ssid];
-		connect(cur, s.ssid, s.encryption, s.key, n.band, '');
-		remember(cur, s.ssid, s.encryption, s.key);
+		connect(cur, s.ssid, s.encryption, s.key, n.band, '', s.eap);
+		remember(cur, s.ssid, s.encryption, s.key, s.eap);
 		cur.commit('wireless');
 		cur.commit('network');
 		cur.commit('firewall');
@@ -658,8 +734,81 @@ function repeater_tick() {
 	return { action: 'waiting' };
 }
 
+// wpa_supplicant's own words for why a join failed, most specific first.
+const JOIN_FAILURES = [
+	[ /CTRL-EVENT-EAP-TLS-CERT-ERROR/, 'certificate' ],
+	[ /reason=WRONG_KEY/, 'wrong_key' ],
+	[ /CTRL-EVENT-EAP-FAILURE|reason=AUTH_FAILED/, 'auth_failed' ],
+	[ /CTRL-EVENT-(ASSOC|AUTH)-REJECT/, 'rejected' ]
+];
+
+// Only lines about this network count: right after a change wpa_supplicant
+// still reports on the previous one for a moment. Lines without a name
+// (EAP events) belong to the network last named.
+function join_failure(since, ssid) {
+	const p = popen('logread -t -e wpa_supplicant 2>/dev/null');
+	if (!p)
+		return null;
+	let found = null;
+	let current = null;
+	for (let line = p.read('line'); length(line); line = p.read('line')) {
+		const at = match(line, /\[([0-9]+)\.[0-9]+\]/);
+		if (!at || +at[1] < since || !match(line, /-sta[0-9]*: /))
+			continue;
+		const named = match(line, /SSID='(.*)' freq=/) ?? match(line, / ssid="(.*)" /);
+		if (named)
+			current = named[1];
+		if (current != ssid)
+			continue;
+		if (match(line, /CTRL-EVENT-CONNECTED/))
+			found = null;
+		for (let i = 0; i < length(JOIN_FAILURES); i++)
+			if (match(line, JOIN_FAILURES[i][0]) && (found == null || i < found))
+				found = i;
+	}
+	p.close();
+	return found != null ? JOIN_FAILURES[found][1] : null;
+}
+
+// From the scans wpa_supplicant keeps running while it looks for the network.
+function recently_seen(ssid) {
+	const devices = scan_devices();
+	const sta = sta_ifname();
+	if (sta)
+		push(devices, sta);
+	for (let dev in devices)
+		for (let r in nl80211.request(nl80211.const.NL80211_CMD_GET_SCAN, nl80211.const.NLM_F_DUMP, { dev }) ?? [])
+			if (r.bss && ssid_of(r.bss) == ssid && (r.bss.seen_ms_ago ?? 0) < JOIN_TIMEOUT * 1000)
+				return true;
+	return false;
+}
+
+// What became of the last join: the UI follows it after repeater_connect.
+function repeater_status() {
+	const cur = uci();
+	if (!cur.get('wireless', 'wwan') || cur.get('wireless', 'wwan', 'disabled') == '1')
+		return { state: 'idle', ssid: null, reason: null, ipaddr: null };
+	const ssid = cur.get('wireless', 'wwan', 'ssid');
+	const link = sta_link(sta_ifname());
+	const addr = iface_status('wwan')?.['ipv4-address']?.[0];
+	if (link && addr)
+		return { state: 'connected', ssid, reason: null, ipaddr: `${addr.address}/${addr.mask}` };
+	const since = +(readfile(JOIN_FILE) ?? 0);
+	const elapsed = time() - since;
+	const failed = (reason) => ({ state: 'failed', ssid, reason, ipaddr: null });
+	if (link)
+		return elapsed > ADDRESS_TIMEOUT ? failed('no_address') : { state: 'connecting', ssid, reason: null, ipaddr: null };
+	const reason = since ? join_failure(since, ssid) : null;
+	if (reason)
+		return failed(reason);
+	if (elapsed > JOIN_TIMEOUT)
+		return failed(recently_seen(ssid) ? 'timeout' : 'not_found');
+	return { state: 'connecting', ssid, reason: null, ipaddr: null };
+}
+
 const methods = {
 	internet_status: { call: status },
+	repeater_status: { call: repeater_status },
 	wan_get: {
 		call: function() {
 			return wan_view(uci());
@@ -671,7 +820,7 @@ const methods = {
 	},
 	repeater_scan: { call: repeater_scan },
 	repeater_connect: {
-		args: { ssid: '', bssid: '', encryption: '', key: '', band: '', save: false },
+		args: { ssid: '', bssid: '', encryption: '', key: '', band: '', save: false, eap: {} },
 		call: repeater_connect
 	},
 	repeater_disconnect: { call: repeater_disconnect },

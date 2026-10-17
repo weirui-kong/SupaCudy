@@ -5,8 +5,9 @@
 # Builds the world around the emulated router, each actor in its own
 # network namespace on this VM:
 #
-#   upstream  phy3: "Hotel-WiFi" (WPA2) and "Cafe-Free" (open) hotspots with
-#             DHCP, routed to the internet through veth-uplink; a DNS server
+#   upstream  phy3: "Hotel-WiFi" (WPA2), "Cafe-Free" (open) and "Campus-WiFi"
+#             (WPA2-Enterprise, PEAP or TTLS as campus-user / campus-pass,
+#             server certificate emu-server) hotspots with DHCP, routed to the internet through veth-uplink; a DNS server
 #             on 10.250.10.2 that knows vpn-test.example (10.250.30.7); a
 #             WireGuard server ("VPN provider") on 10.250.10.2:51820 and an
 #             OpenVPN server on 10.250.10.2:1194 (tunnel 10.250.31.0/24)
@@ -31,6 +32,9 @@ ROUTER_KEY='supacudy-wifi'
 HOTEL_SSID='Hotel-WiFi'
 HOTEL_KEY='hotel-guest'
 CAFE_SSID='Cafe-Free'
+CAMPUS_SSID='Campus-WiFi'
+CAMPUS_USER='campus-user'
+CAMPUS_PASS='campus-pass'
 GUEST_SSID='SupaCudy-Guest'
 GUEST_KEY='guest-pass-1'
 # Test-only keys, published in docs/emulator.md; never use them elsewhere.
@@ -142,6 +146,22 @@ setup_upstream() {
 		wpa_passphrase=$HOTEL_KEY
 		bss=up1
 		ssid=$CAFE_SSID
+		bss=up2
+		ssid=$CAMPUS_SSID
+		wpa=2
+		wpa_key_mgmt=WPA-EAP
+		rsn_pairwise=CCMP
+		ieee8021x=1
+		eap_server=1
+		eap_user_file=$RUN/hostapd-eap.users
+		ca_cert=$OVPN/ca.crt
+		server_cert=$OVPN/server.crt
+		private_key=$OVPN/server.key
+	EOF
+	# Phase 1 for anyone, then the one inner login.
+	cat > "$RUN/hostapd-eap.users" <<-EOF
+		* PEAP,TTLS
+		"$CAMPUS_USER" MSCHAPV2,GTC,TTLS-MSCHAPV2,TTLS-PAP "$CAMPUS_PASS" [2]
 	EOF
 }
 
@@ -244,10 +264,10 @@ start_service() {
 
 	instance upstream-hostapd ip netns exec upstream hostapd "$RUN/hostapd-upstream.conf"
 	instance upstream-dhcp ip netns exec upstream dnsmasq --keep-in-foreground \
-		--conf-file=/dev/null --bind-dynamic --interface=up0 --interface=up1 --interface=uplink0 \
+		--conf-file=/dev/null --bind-dynamic --interface=up0 --interface=up1 --interface=up2 --interface=uplink0 \
 		--address=/vpn-test.example/10.250.30.7 \
 		--except-interface=lo --dhcp-range=up0,10.250.11.100,10.250.11.199,1h \
-		--dhcp-range=up1,10.250.12.100,10.250.12.199,1h --no-resolv --server=10.250.2.3 \
+		--dhcp-range=up1,10.250.12.100,10.250.12.199,1h --dhcp-range=up2,10.250.13.100,10.250.13.199,1h --no-resolv --server=10.250.2.3 \
 		--pid-file="$RUN/dnsmasq-upstream.pid" --dhcp-leasefile="$RUN/dnsmasq-upstream.leases"
 	instance upstream-addr "$LIB/upstream-addresses"
 	if setup_ovpn_server; then

@@ -27,6 +27,7 @@ export interface AdguardState {
   rules: string[] | null;
   /** synced: AdGuard Home has the current admin password. */
   web: { enabled: boolean; user: string | null; port: number; synced: boolean };
+  logging: AdguardLogging | null;
   stats: {
     queries: number;
     blocked: number;
@@ -34,6 +35,11 @@ export interface AdguardState {
     top_blocked: { name: string; count: number }[];
     top_clients: { name: string; count: number }[];
   } | null;
+}
+
+export interface AdguardLogging {
+  statistics: boolean;
+  querylog: boolean;
 }
 
 type Applied = { applied: boolean };
@@ -44,6 +50,7 @@ export const setAdguardProtection = (enabled: boolean) => supacudy<Applied>('adg
 export const addAdguardList = (url: string, name: string) => supacudy<Applied>('adguard_list_add', { url, name });
 export const setAdguardList = (l: { url: string; name: string; enabled: boolean }) => supacudy<Applied>('adguard_list_set', l);
 export const removeAdguardList = (url: string) => supacudy<Applied>('adguard_list_remove', { url });
+export const setAdguardLogging = (l: AdguardLogging) => supacudy<Applied>('adguard_logging_set', { ...l });
 export const setAdguardRules = (rules: string[]) => supacudy<Applied>('adguard_rules_set', { rules });
 
 // The page uses the admin password (user root). It is only sent when

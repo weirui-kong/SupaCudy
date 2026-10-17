@@ -7,7 +7,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=supacudy-base
 PKG_VERSION:=0.4.0
-PKG_RELEASE:=2
+PKG_RELEASE:=3
 
 PKG_LICENSE:=Apache-2.0
 PKG_MAINTAINER:=SupaCudy contributors

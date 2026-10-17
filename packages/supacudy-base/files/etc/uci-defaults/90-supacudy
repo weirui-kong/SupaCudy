@@ -16,6 +16,24 @@ if [ -x /etc/init.d/https-dns-proxy ] && [ "$(uci -q get supacudy.dns.mode)" != 
 	/etc/init.d/https-dns-proxy disable
 fi
 
+# Reaching the router from the WAN side: the web UI open, SSH closed. Kept
+# as they are once they exist (the Settings page switches them).
+for spec in 'webui:80 443:1:SupaCudy: web UI from the WAN' 'ssh:22:0:SupaCudy: SSH from the WAN'; do
+	key=${spec%%:*}; rest=${spec#*:}
+	ports=${rest%%:*}; rest=${rest#*:}
+	enabled=${rest%%:*}; name=${rest#*:}
+	section="supacudy_wan_$key"
+	[ -n "$(uci -q get "firewall.$section")" ] && continue
+	uci set "firewall.$section=rule"
+	uci set "firewall.$section.name=$name"
+	uci set "firewall.$section.src=wan"
+	uci set "firewall.$section.proto=tcp"
+	uci set "firewall.$section.dest_port=$ports"
+	uci set "firewall.$section.target=ACCEPT"
+	uci set "firewall.$section.enabled=$enabled"
+	uci commit firewall
+done
+
 # Uplink priority by route metric: Ethernet, then repeater (20) and
 # tethering (30), which the UI sets when it creates them. The failover
 # watcher's own routes sit below all three.

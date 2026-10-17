@@ -16,6 +16,12 @@ ADMIN_HASH="$(bcrypt "$ADMIN")"
 NEW_HASH="$(bcrypt emu-new-pass)"
 NATIVE="curl -s -f -m 5 -u root:$ADMIN http://192.168.200.1:3000/control"
 lookup() { echo "$LAPTOP nslookup $1 192.168.200.1 | grep Address | tail -1"; }
+LOCAL_API="curl -s -f -m 5 -K /etc/supacudy/adguard.curl http://127.0.0.1:3000/control"
+logging() { echo "ubus call supacudy adguard_logging_set '{\"statistics\":$1,\"querylog\":$2}' | grep -q applied"; }
+logging_is() {
+	echo "$GET | jsonfilter -e @.logging.statistics | grep -qx $1 && $GET | jsonfilter -e @.logging.querylog | grep -qx $2 &&
+		$LOCAL_API/stats/config | jsonfilter -e @.enabled | grep -qx $1 && $LOCAL_API/querylog/config | jsonfilter -e @.enabled | grep -qx $2"
+}
 
 check "AdGuard Home is set up on first boot" \
 	"[ \"\$(uci get supacudy.adguard.enabled)\" = 1 ] && [ \"\$(uci get dhcp.@dnsmasq[0].port)\" = 5353 ] &&
@@ -26,6 +32,16 @@ eventually "AdGuard Home answers on port 53 and dnsmasq behind it" \
 check "its settings are read from AdGuard Home itself" \
 	"$GET | jsonfilter -e @.protection | grep -q true && $GET | jsonfilter -e '@.filters[0].url' | grep -q filter_1.txt &&
 	 ! uci -q get supacudy.adguard.protection"
+# AdGuard Home rewrites the file in its own key order, so the whole section is read.
+yaml_section_off() { echo "sed -n '/^$1:/,/^[a-z]/p' /etc/adguardhome.yaml | grep -qx '  enabled: false'"; }
+check "statistics and the query log start off" "$(logging_is false false) && $(yaml_section_off querylog) && $(yaml_section_off statistics)"
+check "a logging change with a missing switch is rejected as invalid" \
+	"! ubus call supacudy adguard_logging_set '{\"statistics\":true}' && ! ubus call supacudy adguard_logging_set '{\"statistics\":1,\"querylog\":false}'"
+check "statistics are turned on and the query log stays off" "$(logging true false) && $(logging_is true false)"
+check "the query log is turned on, keeping the retention AdGuard Home had" \
+	"before=\$($LOCAL_API/querylog/config | jsonfilter -e @.interval) && $(logging true true) && $(logging_is true true) &&
+	 [ \"\$($LOCAL_API/querylog/config | jsonfilter -e @.interval)\" = \"\$before\" ]"
+check "both are turned off again" "$(logging false false) && $(logging_is false false)"
 check "a test host name is added" \
 	"ubus call supacudy host_set '{\"id\":\"\",\"name\":\"ads.test\",\"ip\":\"192.168.200.77\"}' | jsonfilter -e @.id > /tmp/ag-host"
 eventually "LAN devices resolve local names through AdGuard Home" "$(lookup ads.test) | grep -q 192.168.200.77"

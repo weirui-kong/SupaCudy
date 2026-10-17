@@ -56,3 +56,11 @@ export function rangeSize(s: string): number {
   const [a, b = a] = s.split('-').map(Number);
   return b - a + 1;
 }
+
+export interface WanAccess {
+  webui: boolean;
+  ssh: boolean;
+}
+
+export const getWanAccess = () => supacudy<WanAccess>('wan_access_get');
+export const setWanAccess = (a: WanAccess) => supacudy<{ applied: boolean }>('wan_access_set', { ...a });

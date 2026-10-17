@@ -260,7 +260,44 @@ function dmz_set(req) {
 
 const FORWARD_ARGS = { id: '', name: '', proto: '', external_port: '', internal_ip: '', internal_port: '', enabled: false };
 
+// The router's own services seen from the internet side. Both rules are
+// created on first boot (90-supacudy in supacudy-base): the web UI open,
+// SSH closed. A missing rule counts as closed.
+const WAN_ACCESS = {
+	webui: { section: 'supacudy_wan_webui', name: 'SupaCudy: web UI from the WAN', ports: '80 443' },
+	ssh: { section: 'supacudy_wan_ssh', name: 'SupaCudy: SSH from the WAN', ports: '22' }
+};
+
+function wan_access_get() {
+	const cur = uci();
+	const out = {};
+	for (let k, v in WAN_ACCESS)
+		out[k] = cur.get('firewall', v.section) == 'rule' && cur.get('firewall', v.section, 'enabled') != '0';
+	return out;
+}
+
+function wan_access_set(req) {
+	const a = req.args;
+	if (type(a.webui) != 'bool' || type(a.ssh) != 'bool')
+		return req.error(INVALID);
+	const cur = uci();
+	for (let k, v in WAN_ACCESS) {
+		cur.set('firewall', v.section, 'rule');
+		cur.set('firewall', v.section, 'name', v.name);
+		cur.set('firewall', v.section, 'src', 'wan');
+		cur.set('firewall', v.section, 'proto', 'tcp');
+		cur.set('firewall', v.section, 'dest_port', v.ports);
+		cur.set('firewall', v.section, 'target', 'ACCEPT');
+		cur.set('firewall', v.section, 'enabled', a[k] ? '1' : '0');
+	}
+	cur.commit('firewall');
+	run_later('/etc/init.d/firewall reload', 1);
+	return { applied: true };
+}
+
 const methods = {
+	wan_access_get: { call: wan_access_get },
+	wan_access_set: { args: { webui: false, ssh: false }, call: wan_access_set },
 	firewall_get: { call: firewall_get },
 	forward_set: { args: FORWARD_ARGS, call: forward_set },
 	forward_delete: { args: { id: '' }, call: (req) => delete_section(req, 'redirect', (id) => id != DMZ) },

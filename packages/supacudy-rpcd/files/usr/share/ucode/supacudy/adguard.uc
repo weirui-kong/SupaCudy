@@ -67,14 +67,17 @@ function initial_yaml() {
 		'filters:',
 		'  - enabled: true', `    url: ${CATALOG[0].url}`, `    name: ${CATALOG[0].name}`, '    id: 1',
 		'user_rules: []',
+		// Off until the user turns them on, to keep writes down.
+		'querylog:', '  enabled: false', '  file_enabled: false', '  interval: 2160h',
+		'statistics:', '  enabled: false', '  interval: 24h',
 		'schema_version: 29', ''
 	]);
 }
 
 // The request body goes through a file so no request data reaches the
 // shell. Returns null when AdGuard Home did not answer or refused.
-function api(path, body, timeout) {
-	let cmd = `curl -s -f -m ${int(timeout ?? 8)}`;
+function api(path, body, timeout, put) {
+	let cmd = `curl -s -f -m ${int(timeout ?? 8)}${put ? ' -X PUT' : ''}`;
 	if (access(CURL_AUTH))
 		cmd += ` -K ${CURL_AUTH}`;
 	if (body != null) {
@@ -282,6 +285,8 @@ function adguard_get() {
 	const status = on ? api('status') : null;
 	const filtering = status ? api('filtering/status') : null;
 	const stats = status ? api('stats') : null;
+	const stats_config = status ? api('stats/config') : null;
+	const querylog_config = status ? api('querylog/config') : null;
 	const lists = map(filtering?.filters ?? [], (f) => ({
 		name: f.name, url: f.url, enabled: f.enabled == true, rules: f.rules_count ?? null
 	}));
@@ -300,6 +305,8 @@ function adguard_get() {
 		suggested: filter(CATALOG, (c) => !length(filter(lists, (f) => f.url == c.url))),
 		rules: filtering ? as_list(filtering.user_rules) : null,
 		web,
+		logging: stats_config && querylog_config ?
+			{ statistics: stats_config.enabled == true, querylog: querylog_config.enabled == true } : null,
 		stats: stats ? {
 			queries: stats.num_dns_queries ?? 0,
 			blocked: stats.num_blocked_filtering ?? 0,
@@ -351,6 +358,16 @@ const CHANGES = {
 			if (!valid_text(r, 1024))
 				return fail('rule_invalid', { value: `${r}` });
 		return () => api('filtering/set_rules', { rules: a.rules });
+	},
+	// The other settings (retention, ignored names) are sent back unchanged.
+	adguard_logging_set: (a) => type(a.statistics) != 'bool' || type(a.querylog) != 'bool' ? INVALID : () => {
+		const stats = api('stats/config');
+		const querylog = api('querylog/config');
+		if (!stats || !querylog)
+			return null;
+		stats.enabled = a.statistics;
+		querylog.enabled = a.querylog;
+		return api('stats/config/update', stats, null, true) && api('querylog/config/update', querylog, null, true);
 	}
 };
 
@@ -406,6 +423,7 @@ const methods = {
 	adguard_list_set: { args: { url: '', name: '', enabled: false }, call: change_method('adguard_list_set') },
 	adguard_list_remove: { args: { url: '' }, call: change_method('adguard_list_remove') },
 	adguard_rules_set: { args: { rules: [] }, call: change_method('adguard_rules_set') },
+	adguard_logging_set: { args: { statistics: false, querylog: false }, call: change_method('adguard_logging_set') },
 	adguard_web_set: { args: { enabled: false, password: '', hash: '' }, call: adguard_web_set }
 };
 

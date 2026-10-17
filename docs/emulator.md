@@ -51,6 +51,7 @@ scripts/emulator.sh console        # 看串口启动日志
                     upstream（"酒店"）
                       phy3: "Hotel-WiFi"（WPA2，密码 hotel-guest）10.250.11.0/24
                             "Cafe-Free"（开放）                10.250.12.0/24
+                            "Campus-WiFi"（WPA2 企业级）       10.250.13.0/24
                       经 uplink 走路由器的 WAN 上网
 ```
 
@@ -102,6 +103,8 @@ PersistentKeepalive = 25
 隧道通了以后，LAN 设备能 ping 通 10.250.30.1（只有经过隧道才可达）。
 
 同一个命名空间里还有一个 OpenVPN 服务器（10.250.10.2:1194，UDP，隧道 10.250.31.0/24）。证书在 `emulator/files/usr/share/supacudy-emulator/openvpn/`，同样**只用于测试**：把 `client` 配置和 `ca.crt`、`client.crt`、`client.key` 内联成一个 .ovpn 文件（`remote 10.250.10.2 1194`、`remote-cert-tls server`）即可导入，`tests/emulator/ovpn-add.uc` 就是这样做的。
+
+"Campus-WiFi" 是 WPA2 企业级（802.1X）热点，由 hostapd 内置的 EAP 服务器认证：PEAP 或 TTLS，用户 `campus-user`，密码 `campus-pass`，内层认证可用 MSCHAPv2、GTC（PEAP）或 PAP（TTLS）。服务器证书就是上面 OpenVPN 的 `server.crt`（CN `emu-server`，由测试 CA 签发，不在系统证书库里），所以选“验证服务器证书”时连接会失败，正好用来测试证书错误的提示。
 
 ## 能测和不能测的
 

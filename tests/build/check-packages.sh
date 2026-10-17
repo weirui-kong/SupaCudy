@@ -98,7 +98,8 @@ try:
     acl = json.load(open(sys.argv[1]))
 except ValueError as e:
     print("invalid JSON: %s" % e); sys.exit(0)
-methods = set(re.findall(r'(\w+):\s*\{\s*(?:args:\s*(?:\{[^}]*\}|\w+)\s*,\s*)?call:', plugin))
+# args may hold one level of nested objects, e.g. eap: {}.
+methods = set(re.findall(r'(\w+):\s*\{\s*(?:args:\s*(?:\{(?:[^{}]|\{[^{}]*\})*\}|\w+)\s*,\s*)?call:', plugin))
 granted = set()
 for group in acl.values():
     for kind in ("read", "write"):

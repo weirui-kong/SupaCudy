@@ -15,7 +15,9 @@
   import { t } from '../../lib/i18n/index.svelte';
   import { apply } from '../../lib/notify.svelte';
 
-  let { radio, onsaved }: { radio: Radio; onsaved: () => void } = $props();
+  // shared: the bands are merged and the name, security and password are set
+  // on the bands card.
+  let { radio, shared = false, onsaved }: { radio: Radio; shared?: boolean; onsaved: () => void } = $props();
 
   let enabled = $state(false);
   let ssid = $state('');
@@ -45,7 +47,7 @@
   $effect(() => fill(radio));
 
   const bandName = $derived(t(`bands.${radio.band}`));
-  const valid = $derived(!enabled || (errors.ssid === null && errors.key === null));
+  const valid = $derived(!enabled || shared || (errors.ssid === null && errors.key === null));
   const dirty = $derived(
     enabled !== (radio.enabled && radio.main.enabled) || ssid !== radio.main.ssid || encryption !== radio.main.encryption ||
       key !== radio.main.key || hidden !== radio.main.hidden || channel !== String(radio.channel) ||
@@ -85,7 +87,11 @@
   <form class="form" onsubmit={submit}>
     <Switch label={t('wifi.enable', { band: bandName })} bind:checked={enabled} />
     {#if enabled}
-      <NetworkFields bind:ssid bind:encryption bind:key bind:hidden bind:errors encryptions={radio.encryptions} />
+      {#if shared}
+        <p class="muted">{t('wifi.shared_hint', { ssid: radio.main.ssid })}</p>
+      {:else}
+        <NetworkFields bind:ssid bind:encryption bind:key bind:hidden bind:errors encryptions={radio.encryptions} />
+      {/if}
 
       <button type="button" class="disclosure" aria-expanded={advanced} onclick={() => (advanced = !advanced)}>
         {t('wifi.advanced')}
@@ -105,7 +111,7 @@
     {/if}
 
     <div class="actions">
-      {#if radio.enabled && radio.main.enabled}
+      {#if radio.enabled && radio.main.enabled && !shared}
         <span class="share"><Button icon="qr" variant="ghost" onclick={() => (sharing = true)}>{t('wifi.share')}</Button></span>
       {/if}
       <Button onclick={() => fill(radio)} disabled={!dirty || busy}>{t('common.reset')}</Button>

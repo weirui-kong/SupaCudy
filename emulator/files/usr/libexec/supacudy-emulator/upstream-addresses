@@ -2,11 +2,12 @@
 # Copyright 2026 SupaCudy contributors
 # SPDX-License-Identifier: Apache-2.0
 #
-# hostapd creates the second hotspot interface itself, so the gateway
+# hostapd creates the other hotspot interfaces itself, so the gateway
 # addresses are (re)applied whenever the interfaces exist. Runs under procd.
 
 while :; do
 	ip netns exec upstream ip addr replace 10.250.11.1/24 dev up0 2>/dev/null
 	ip netns exec upstream ip addr replace 10.250.12.1/24 dev up1 2>/dev/null
+	ip netns exec upstream ip addr replace 10.250.13.1/24 dev up2 2>/dev/null
 	sleep 5
 done
