@@ -35,7 +35,7 @@ check "saved keys are not handed back to the UI" \
 # Any address beyond the WAN's own subnet follows the default route.
 LAPTOP_IP="\$($LAPTOP ip -4 -o addr show dev eth0 | sed -n 's/.* inet \\([0-9.]*\\).*/\\1/p')"
 WAN_FLOW="conntrack -L -p icmp -s $LAPTOP_IP --reply-dst 10.250.2.15 2>/dev/null | grep -q 'dst=203.0.113.9'"
-check "the laptop has a connection open through the WAN" \
+eventually "the laptop has a connection open through the WAN" \
 	"($LAPTOP ping -c 60 -i 1 203.0.113.9 >/dev/null 2>&1 </dev/null &) ; sleep 2; $WAN_FLOW"
 check "connecting is accepted" "ubus call supacudy vpn_connect \"{\\\"id\\\":\\\"\$(cat /tmp/vpn-id)\\\"}\" | grep -q applied"
 eventually "the tunnel completes a handshake with the server" \
@@ -63,7 +63,11 @@ check "the kill switch is turned on without the LAN exception" "$(options true f
 check "with the kill switch, the VPN's DNS may only be used through the tunnel" \
 	"[ \"\$(uci get firewall.supacudy_vpn_dns.dest_ip)\" = 10.250.30.53 ] &&
 	 uci get dhcp.@dnsmasq[0].server | grep -q 10.250.30.53"
-eventually "the DNS rule is loaded" "nft list chain inet fw4 output_wan | grep -q 10.250.30.53"
+# The firewall reload is not the last step of applying the change: ifup vpn
+# follows, and would undo the ifdown below. The apply's shell lives until its
+# last step, clearing AdGuard Home's cache.
+eventually "the DNS rule is loaded and the change is fully applied" \
+	"nft list chain inet fw4 output_wan | grep -q 10.250.30.53 && ! pgrep -f '[c]lear_cache()'"
 # The interface going away, not just the server: then the route to the VPN's
 # DNS server falls back to the WAN, which is where a lookup would leak.
 # Counted after the firewall in a table of the test's own: ifdown makes fw4
