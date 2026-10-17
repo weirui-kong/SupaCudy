@@ -68,7 +68,11 @@ eventually "the VPN's routes move to their own table with a rule for marked pack
 eventually "the laptop reaches the tunnel" "$LAPTOP ping -c1 -W2 10.250.30.1"
 check "only the laptop's IPv6 is held back, not everyone's" \
 	"! uci -q get firewall.supacudy_vpn_no6 && nft list table inet supacudy_vpnroute | grep -q 'meta nfproto ipv6'"
-check "the NAS does not use the tunnel" "! $NAS ping -c1 -W2 10.250.30.1 && $NAS ping -c1 -W2 10.250.2.2"
+# Checked by route, not by an unanswered ping: QEMU sends pings out through
+# the host, and a proxy there may answer any address.
+check "the NAS does not use the tunnel" \
+	"nas=\$($NAS ip -4 -o addr show dev eth0 | sed -n 's/.* inet \([0-9.]*\).*/\1/p') &&
+	 ip route get 10.250.30.1 from \$nas iif br-lan | grep -q 'dev eth0' && $NAS ping -c1 -W2 10.250.2.2"
 eventually "the profile's DNS is not forced on everyone" "! grep -q '^server=10.250.2.3$' $DNSMASQ_CONF"
 check "the kill switch is turned on for the laptop only" "$(options true false selected "\"$LAPTOP_MAC\"")"
 check "the server goes away again" "$SERVER ip link set wg0 down"
@@ -93,6 +97,7 @@ check "the IPv6 block is lifted" "! uci -q get firewall.supacudy_vpn_no6 && ubus
 eventually "the tunnel, its DNS and its firewall changes are gone" \
 	"! ip link show vpn && ! uci -q get network.vpn && ! grep -q '^server=10.250.2.3$' $DNSMASQ_CONF &&
 	 ! uci show firewall | grep -q \"enabled='0'\" && ! uci -q get firewall.supacudy_vpn_lan"
-eventually "LAN devices use the WAN directly again" "$LAPTOP ping -c1 -W2 10.250.2.2 && ! $LAPTOP ping -c1 -W2 10.250.30.1"
+eventually "LAN devices use the WAN directly again" \
+	"$LAPTOP ping -c1 -W2 10.250.2.2 && ! ip route get 10.250.30.1 | grep -q 'dev vpn'"
 check "the profile is deleted" \
 	"ubus call supacudy vpn_profile_delete \"{\\\"id\\\":\\\"\$(cat /tmp/vpn-id)\\\"}\" | grep -q deleted && ! uci show supacudy | grep -q wg_profile"
