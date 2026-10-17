@@ -68,15 +68,16 @@ eventually "the DNS rule is loaded" "nft list chain inet fw4 output_wan | grep -
 # DNS server falls back to the WAN, which is where a lookup would leak.
 # Counted after the firewall in a table of the test's own: ifdown makes fw4
 # reload, which would reset the counters of its own rules.
+# A failure prints the values of both tries: check runs a failed command again.
 check "with the tunnel gone, the router's lookups to it are rejected instead of leaving through the WAN" \
-	"nft delete table inet emu_leak 2>/dev/null; nft add table inet emu_leak &&
+	"cat /tmp/emu-leak.last 2>/dev/null; nft delete table inet emu_leak 2>/dev/null; nft add table inet emu_leak &&
 	 nft add chain inet emu_leak post '{ type filter hook postrouting priority 100; policy accept; }' &&
 	 nft add rule inet emu_leak post oifname eth0 ip daddr 10.250.30.53 counter &&
 	 ifdown vpn; via_wan=0; refused=0;
 	 for i in \$(seq 20); do ip route get 10.250.30.53 | grep -q 'dev eth0' && via_wan=1 && break; sleep 1; done;
 	 nslookup example.org 10.250.30.53 >/dev/null 2>&1 || refused=1;
 	 leaked=\$(nft list chain inet emu_leak post | sed -n 's/.*packets \\([0-9]*\\).*/\\1/p'); ifup vpn; nft delete table inet emu_leak;
-	 echo \"via WAN \$via_wan, refused \$refused, leaked \$leaked\"; [ \$via_wan = 1 ] && [ \$refused = 1 ] && [ \"\$leaked\" = 0 ]"
+	 echo \"via WAN \$via_wan, refused \$refused, leaked \$leaked\" | tee /tmp/emu-leak.last; [ \$via_wan = 1 ] && [ \$refused = 1 ] && [ \"\$leaked\" = 0 ]"
 eventually "the tunnel is back" "ip route show default | grep -q 'dev vpn' && $LAPTOP ping -c1 -W2 10.250.30.1"
 check "the VPN server's name is looked up through the uplink's DNS, which the rule leaves alone" \
 	"uci set supacudy.$VPN_ID.endpoint_host=wg.emu.test && uci commit supacudy && $(options true false) &&
