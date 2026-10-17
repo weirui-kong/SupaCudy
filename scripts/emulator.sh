@@ -147,7 +147,6 @@ cmd_status() {
 # opkg does for conffiles. New package dependencies need `build` instead.
 cmd_deploy() {
 	running || { echo "Not running. Start it with: scripts/emulator.sh start" >&2; exit 1; }
-	(cd "$ROOT/web" && npm run build >/dev/null)
 
 	local stage
 	stage="$(mktemp -d)"
@@ -155,8 +154,9 @@ cmd_deploy() {
 	cp -RP "$ROOT"/packages/supacudy-base/files/. "$stage/"
 	cp -RP "$ROOT"/packages/supacudy-rpcd/files/. "$stage/"
 	cp -RP "$ROOT"/packages/supacudy-ui/files/. "$stage/"
-	mkdir -p "$stage/www/supacudy"
-	cp -RP "$ROOT"/packages/supacudy-ui/htdocs/. "$stage/www/supacudy/"
+	# Built straight into the staging area: scripts/test.sh runs the web
+	# e2e tests from packages/supacudy-ui/htdocs at the same time.
+	(cd "$ROOT/web" && npx vite build --outDir "$stage/www/supacudy" --emptyOutDir >/dev/null)
 	mkdir -p "$stage/usr/share/supacudy-deploy"
 	mv "$stage/etc/config" "$stage/usr/share/supacudy-deploy/config"
 	echo "dev-$(date +%H%M%S)" > "$stage/etc/supacudy_version"
