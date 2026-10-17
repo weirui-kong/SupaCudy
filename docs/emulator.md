@@ -20,7 +20,7 @@ scripts/emulator.sh console        # 看串口启动日志
 | 127.0.0.1:2222 | 22 | SSH |
 | 127.0.0.1:3000 | 3000 | AdGuard Home 页面 |
 
-测试用的第二台虚拟机用 18088、12222、13000。可以用 `EMU_HTTP_PORT`、`EMU_SSH_PORT`、`EMU_ADGUARD_PORT` 修改。
+自动化测试另开两台虚拟机（`tests/emulator/run.sh` 把套件分成两组同时跑），分别用 18088、12222、13000 和 18089、12223、13001。可以用 `EMU_HTTP_PORT`、`EMU_SSH_PORT`、`EMU_ADGUARD_PORT` 修改。
 
 需要：Docker（构建镜像）和 QEMU（`brew install qemu`）。Apple Silicon 上用 HVF 硬件加速，启动约 10 秒。
 

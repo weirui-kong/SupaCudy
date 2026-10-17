@@ -24,8 +24,10 @@ brew install shellcheck               # lint 测试需要（Linux 上用 apt ins
 
   软件包签名仍按 OpenWrt 的公钥校验，换源不影响安全性。
 - **下载缓存**：ImageBuilder 下载过的软件包保存在 Docker 卷 `supacudy-imagebuilder-dl-*` 中，下次直接复用（`docker volume rm` 可清空）。
-- **跳过没变的构建**：`build-packages.sh` 和 `build-image.sh` 会对输入内容算哈希，没变就跳过 SDK / ImageBuilder。需要强制重建时加 `FORCE=1`。
-- **并行测试**：`scripts/test.sh` 在打包完成后并行运行 api、web-e2e 和模拟器三类测试，它们各用各的容器、端口和日志（api 用 18081，e2e 用 18080，模拟器用 8088 / 2222，都只监听 127.0.0.1）。
+- **跳过没变的构建**：`build-packages.sh` 和 `build-image.sh` 会对输入内容算哈希，没变就跳过 SDK / ImageBuilder。需要强制重建时加 `FORCE=1`。模拟器镜像（`HOT_DEPLOY=1`）只看软件包的 Makefile、profile 和脚本：测试开机后会把工作区的文件部署进虚拟机，所以只改文件内容时不用重做镜像。
+- **api 依赖缓存**：`smoke-test.sh` 第一次把依赖（AdGuard Home、Tailscale 等）装进本地镜像 `supacudy-smoke-deps:<依赖哈希>`，之后只装我们自己的包，几秒跑完。依赖变了会自动重建；`docker image rm` 可清理旧的。
+- **并行测试**：`scripts/test.sh` 先构建一次前端，然后三条链同时跑：打包 → build → api；web-e2e；模拟器（镜像是新的就马上开始，否则等打包完成再出镜像）。模拟器测试分两组在两台虚拟机上同时跑。它们各用各的容器、端口和日志（api 18081，e2e 18080，模拟器 18088–18089 / 12222–12223 / 13000–13001，都只监听 127.0.0.1）。
+- **只跑部分模拟器测试**：开发时用 `tests/emulator/run.sh internet`（可列多个套件，`--keep` 保留虚拟机），几分钟内看到结果；push 前仍要跑完整的 `scripts/test.sh`。
 
 ## 测试
 
@@ -33,7 +35,7 @@ brew install shellcheck               # lint 测试需要（Linux 上用 apt ins
 scripts/test.sh
 ```
 
-依次运行 lint → 打包 → build → api（以及前端建好后的 web-unit、web-e2e），最后输出汇总。任何一项失败都不能 push。分类和要求见 [docs/rules/testing.md](rules/testing.md)，每一项的完整日志在 `out/test-logs/`。
+运行 lint → web-unit → 前端构建，再并行运行打包 → build → api、web-e2e 和模拟器，最后输出汇总。任何一项失败都不能 push。分类和要求见 [docs/rules/testing.md](rules/testing.md)，每一项的完整日志在 `out/test-logs/`。
 
 ## 打包
 

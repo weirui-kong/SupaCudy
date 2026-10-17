@@ -476,8 +476,14 @@ function remember(cur, ssid, encryption, key) {
 }
 
 // Joining takes a while (wifi reload, scan, auth, DHCP); without a grace
-// period the tick would treat a fresh join as a lost network.
+// period the tick would treat a fresh join as a lost network. The emulator
+// tests shorten it through supacudy.main.repeater_grace.
 const SWITCH_GRACE = 60;
+
+function switch_grace(cur) {
+	const g = +(cur.get('supacudy', 'main', 'repeater_grace') ?? SWITCH_GRACE);
+	return g >= 5 && g <= 600 ? g : SWITCH_GRACE;
+}
 let last_change = 0;
 let down_since = null;
 
@@ -598,7 +604,8 @@ function repeater_tick() {
 	const now = uptime();
 	if (down_since == null)
 		down_since = now;
-	if (now - last_change < SWITCH_GRACE || now - down_since < SWITCH_GRACE)
+	const grace = switch_grace(cur);
+	if (now - last_change < grace || now - down_since < grace)
 		return { action: 'waiting' };
 
 	const saved = {};

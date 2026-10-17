@@ -23,7 +23,11 @@ for dir in "$ROOT"/packages/*/; do
 done
 
 echo "==> building the web UI into packages/supacudy-ui/htdocs"
-(cd "$ROOT/web" && { [ -d node_modules ] || npm ci --no-audit --no-fund; } && npm run build)
+# scripts/test.sh builds it once up front because the e2e tests serve it
+# while this runs.
+if [ -z "${WEB_ALREADY_BUILT:-}" ]; then
+	(cd "$ROOT/web" && { [ -d node_modules ] || npm ci --no-audit --no-fund; } && npm run build)
+fi
 
 # The SDK step is slow under amd64 emulation, so skip it when nothing that
 # goes into the packages has changed. FORCE=1 rebuilds anyway.

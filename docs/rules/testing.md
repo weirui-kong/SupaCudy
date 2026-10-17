@@ -34,7 +34,8 @@ Each combination checks: no horizontal scrolling, no missing i18n keys shown as 
 
 ## Running
 
-- `scripts/test.sh` is the single entry point. It runs lint → web-unit → build-packages → build → api → web-e2e → emulator, prints a summary and exits non-zero if anything fails.
+- `scripts/test.sh` is the single entry point. It runs lint → web-unit → web-build, then three chains in parallel (build-packages → build → api; web-e2e; emulator-image → emulator, the emulator suites split over two VMs), prints a summary and exits non-zero if anything fails.
+- While iterating, `tests/emulator/run.sh SUITE...` runs selected emulator suites on one VM; it does not replace the full run before a push.
 - Full logs for each category are written to `out/test-logs/`.
 - When adding a category, wire it into `scripts/test.sh` and update the table above in the same change.
 - For changes that can only be verified on a real device, the commit message lists which checklist items were tested.

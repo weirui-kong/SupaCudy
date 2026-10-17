@@ -15,7 +15,7 @@ RESULTS="$LOGS/results"
 rm -rf "$RESULTS"
 mkdir -p "$RESULTS"
 
-CATEGORIES=(lint web-deps web-unit build-packages build api web-e2e emulator-image emulator)
+CATEGORIES=(lint web-deps web-unit web-build build-packages build api web-e2e emulator-image emulator)
 
 # Results go to files rather than variables because the last categories run
 # in background subshells.
@@ -46,7 +46,17 @@ web_deps() {
 	cd "$ROOT/web" && { [ -d node_modules ] || npm ci --no-audit --no-fund; }
 }
 
+# The emulator image only needs packages when it has to be rebuilt; the
+# tests deploy the working tree's files into the VM anyway.
 emulator_chain() {
+	if ! "$ROOT/scripts/emulator.sh" image --check >/dev/null 2>&1; then
+		while [ ! -f "$RESULTS/build-packages" ]; do sleep 2; done
+		if ! passed build-packages; then
+			skip emulator-image "packages did not build"
+			skip emulator "packages did not build"
+			return
+		fi
+	fi
 	run emulator-image "$ROOT/scripts/emulator.sh" image
 	if passed emulator-image; then
 		run emulator "$ROOT/tests/emulator/run.sh"
@@ -55,28 +65,33 @@ emulator_chain() {
 	fi
 }
 
+package_chain() {
+	WEB_ALREADY_BUILT=1 run build-packages "$ROOT/scripts/build-packages.sh"
+	if passed build-packages; then
+		run build "$ROOT/tests/build/check-packages.sh"
+		SMOKE_NAME=supacudy-api PORT=18081 run api "$ROOT/scripts/smoke-test.sh"
+	else
+		skip build "packages did not build"
+		skip api "packages did not build"
+	fi
+}
+
 START=$SECONDS
 
 run lint "$ROOT/tests/lint/check-shell.sh"
 run web-deps web_deps
 run web-unit npm --prefix "$ROOT/web" test
+run web-build npm --prefix "$ROOT/web" run build
 
-# Every category below needs freshly built packages.
-run build-packages "$ROOT/scripts/build-packages.sh"
-
-if passed build-packages; then
-	run build "$ROOT/tests/build/check-packages.sh"
-
-	# Independent of each other: separate containers, ports, VM and logs.
-	SMOKE_NAME=supacudy-api PORT=18081 run api "$ROOT/scripts/smoke-test.sh" &
+# Independent of each other: separate containers, ports, VMs and logs.
+if passed web-build; then
 	run web-e2e "$ROOT/scripts/test-e2e.sh" &
-	emulator_chain &
-	wait
 else
-	for category in build api web-e2e emulator-image emulator; do
-		skip "$category" "packages did not build"
-	done
+	skip web-e2e "the web UI did not build"
 fi
+package_chain &
+emulator_chain &
+wait
 
 echo
 echo "Summary ($((SECONDS - START))s):"

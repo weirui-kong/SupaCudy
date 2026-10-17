@@ -95,19 +95,21 @@ eventually "the repeater is back on the hotel" "$(wwan_up 10.250.11.)"
 check "joining the open café is accepted" \
 	"ubus call supacudy repeater_connect '{$CAFE,\"save\":true}' | grep -q applied"
 eventually "the repeater gets an address from the café" "$(wwan_up 10.250.12.)"
+check "the switch grace period is shortened for the test" \
+	"uci set supacudy.main.repeater_grace=5 && uci commit supacudy"
 check "the café disappears" "$UP ip link set up1 down"
-# Two one-minute grace periods, then a scan and a Wi-Fi reload; allow for a
-# busy host running the other test stages at the same time.
+# Ticked here rather than waiting for the watcher's 20 s period.
 switched=0
-for _ in $(seq 40); do
-	if vm "[ \"\$(uci get wireless.wwan.ssid)\" = Hotel-WiFi ] && $(wwan_up 10.250.11.)" >/dev/null 2>&1; then
+for _ in $(seq 30); do
+	if vm "ubus call supacudy repeater_tick >/dev/null; [ \"\$(uci get wireless.wwan.ssid)\" = Hotel-WiFi ] && $(wwan_up 10.250.11.)" >/dev/null 2>&1; then
 		switched=1
 		break
 	fi
-	sleep 6
+	sleep 3
 done
 if [ "$switched" = 1 ]; then ok "auto-switch moves to the saved hotel"; else not_ok "auto-switch moves to the saved hotel"; fi
 eventually "the café comes back" "$RESPAWN_UPSTREAM; sleep 3; $UP iw dev up1 info | grep -q 'ssid Cafe-Free'"
+check "the grace period is back to its default" "uci -q delete supacudy.main.repeater_grace; uci commit supacudy"
 
 check "options are stored" \
 	"ubus call supacudy repeater_options '{\"auto_switch\":false,\"force_20mhz\":true}' | grep -q true &&

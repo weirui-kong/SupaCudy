@@ -48,18 +48,39 @@ fi
 docker rm -f "$NAME" >/dev/null 2>&1 || true
 [ "$KEEP" = --keep ] || trap 'docker rm -f "$NAME" >/dev/null 2>&1 || true' EXIT
 
-echo "==> starting $IMAGE"
+# Downloading the dependencies (AdGuard Home, Tailscale, OpenVPN...) took
+# most of this test, so they are installed once into a local image, named
+# after the dependency list, and reused until that list changes.
+OWN="$(for f in "$ROOT"/out/packages/*.ipk; do basename "$f" | cut -d_ -f1; done)"
+DEPS="$(for f in "$ROOT"/out/packages/*.ipk; do
+	tar -xzOf "$f" ./control.tar.gz | tar -xzO ./control | sed -n 's/^Depends: //p' | tr ',' '\n'
+done | sed 's/^ *//; s/ .*//' | grep -vxF "$OWN" | grep -v '^$' | LC_ALL=C sort -u)"
+BASE="supacudy-smoke-deps:$(printf '%s\n' "$IMAGE" "$OPENWRT_MIRROR" "$DEPS" | shasum -a 256 | cut -c1-16)"
+if ! docker image inspect "$BASE" >/dev/null 2>&1; then
+	echo "==> installing dependencies into $BASE"
+	docker rm -f "$NAME-deps" >/dev/null 2>&1 || true
+	docker run --name "$NAME-deps" -e MIRROR="$OPENWRT_MIRROR" -e DEPS="$DEPS" "$IMAGE" sh -euc '
+		mkdir -p /var/lock
+		sed -i "s#https://downloads.openwrt.org#${MIRROR%/}#" /etc/opkg/distfeeds.conf
+		opkg update >/dev/null
+		# shellcheck disable=SC2086 # one package name per word
+		opkg install $DEPS >/dev/null
+	'
+	docker commit "$NAME-deps" "$BASE" >/dev/null
+	docker rm -f "$NAME-deps" >/dev/null
+fi
+
+echo "==> starting $BASE"
 docker run -d --name "$NAME" -p "127.0.0.1:$PORT:80" \
 	-v "$ROOT/out/packages:/supacudy:ro" \
-	"$IMAGE" sleep infinity >/dev/null
+	"$BASE" sleep infinity >/dev/null
 
-docker exec -e PASSWORD="$PASSWORD" -e MIRROR="$OPENWRT_MIRROR" "$NAME" sh -euc '
+docker exec -e PASSWORD="$PASSWORD" "$NAME" sh -euc '
 	mkdir -p /var/lock /var/run /tmp/sysinfo
 	echo "supacudy,smoke-test" > /tmp/sysinfo/board_name
 	echo "SupaCudy smoke test" > /tmp/sysinfo/model
 
-	sed -i "s#https://downloads.openwrt.org#${MIRROR%/}#" /etc/opkg/distfeeds.conf
-	opkg update >/dev/null
+	# Every dependency is already installed, so nothing is downloaded.
 	opkg install /supacudy/*.ipk >/dev/null
 	# A syntax error would otherwise only show up as "Object not found".
 	ucode -c -o /dev/null /usr/share/rpcd/ucode/supacudy.uc

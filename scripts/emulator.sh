@@ -7,6 +7,7 @@
 #
 #   scripts/emulator.sh build      build packages and the emulator image
 #   scripts/emulator.sh image      rebuild only the image from out/packages
+#                                  (--check: exit 0 if it is up to date)
 #   scripts/emulator.sh deploy     push the current code into the running VM
 #   scripts/emulator.sh start      boot the VM (add --fresh to reset its disk)
 #   scripts/emulator.sh stop
@@ -77,7 +78,7 @@ cmd_image() {
 	mkdir -p "$overlay/etc/dropbear"
 	cp "$KEY.pub" "$overlay/etc/dropbear/authorized_keys"
 	chmod 600 "$overlay/etc/dropbear/authorized_keys"
-	"$ROOT/scripts/build-image.sh" emulator
+	"$ROOT/scripts/build-image.sh" ${1:+"$1"} emulator
 }
 
 cmd_start() {
@@ -202,7 +203,7 @@ cmd_ssh() {
 
 case "${1:-}" in
 	build) cmd_build ;;
-	image) cmd_image ;;
+	image) cmd_image "${2:-}" ;;
 	deploy) cmd_deploy ;;
 	start) cmd_start "${2:-}" ;;
 	stop) cmd_stop ;;

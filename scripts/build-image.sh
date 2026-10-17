@@ -5,13 +5,19 @@
 # Build a firmware image with the official OpenWrt ImageBuilder (in Docker),
 # from the packages in out/packages/ plus the official package feeds.
 #
-#   scripts/build-image.sh <profile>      e.g. cudy-tr3000-256mb-v1 (see profiles/)
+#   scripts/build-image.sh <profile>          e.g. cudy-tr3000-256mb-v1 (see profiles/)
+#   scripts/build-image.sh --check <profile>  exit 0 if the image is up to date
 #
 # Output: out/images/<profile>/
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+CHECK_ONLY=""
+if [ "${1:-}" = --check ]; then
+	CHECK_ONLY=1
+	shift
+fi
 NAME="${1:-}"
 CONF="$ROOT/profiles/$NAME.conf"
 
@@ -39,19 +45,25 @@ IMAGE="openwrt/imagebuilder:${TARGET}-${SUBTARGET}-${OPENWRT_VERSION}"
 PKG_DIR="$ROOT/out/packages"
 OUT="$ROOT/out/images/$NAME"
 
-if ! ls "$PKG_DIR"/*.ipk >/dev/null 2>&1; then
-	echo "No packages in out/packages/. Run scripts/build-packages.sh first." >&2
-	exit 1
-fi
 
 # Skip the slow ImageBuilder run when nothing that goes into the image has
 # changed. FORCE=1 rebuilds anyway.
 STAMP="$OUT/.inputs.sha256"
+# A profile with HOT_DEPLOY=1 (the emulator) gets the working tree's files
+# copied over the image before every test, so only the package metadata
+# (versions, dependencies) has to be current in the image itself.
+package_inputs() {
+	if [ -n "${HOT_DEPLOY:-}" ]; then
+		find packages -name Makefile -print0
+	else
+		find out/packages -name '*.ipk' -print0
+	fi
+}
 inputs_hash() {
 	(
 		cd "$ROOT"
 		{
-			find out/packages -name '*.ipk' -print0
+			package_inputs
 			find profiles/common.conf "profiles/$NAME.conf" config/openwrt.env scripts/build-image.sh -print0
 			if [ -n "$FILES_DIR" ]; then find "$FILES_DIR" \( -type f -o -type l \) -print0; fi
 		} | LC_ALL=C sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d' ' -f1
@@ -60,8 +72,14 @@ inputs_hash() {
 HASH="$(inputs_hash)"
 if [ -z "${FORCE:-}" ] && [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$HASH" ]; then
 	echo "==> image is up to date (inputs unchanged), skipping the ImageBuilder"
-	ls -1 "$OUT"
+	[ -n "$CHECK_ONLY" ] || ls -1 "$OUT"
 	exit 0
+fi
+[ -z "$CHECK_ONLY" ] || exit 1
+
+if ! ls "$PKG_DIR"/*.ipk >/dev/null 2>&1; then
+	echo "No packages in out/packages/. Run scripts/build-packages.sh first." >&2
+	exit 1
 fi
 
 # Downloaded official packages are kept between runs in a Docker volume.
