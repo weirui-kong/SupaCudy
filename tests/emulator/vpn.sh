@@ -72,10 +72,11 @@ check "with the tunnel gone, the router's lookups to it are rejected instead of 
 	"nft delete table inet emu_leak 2>/dev/null; nft add table inet emu_leak &&
 	 nft add chain inet emu_leak post '{ type filter hook postrouting priority 100; policy accept; }' &&
 	 nft add rule inet emu_leak post oifname eth0 ip daddr 10.250.30.53 counter &&
-	 ifdown vpn; sleep 2; via_wan=0; refused=0;
-	 ip route get 10.250.30.53 | grep -q 'dev eth0' && via_wan=1; nslookup example.org 10.250.30.53 >/dev/null 2>&1 || refused=1;
+	 ifdown vpn; via_wan=0; refused=0;
+	 for i in \$(seq 20); do ip route get 10.250.30.53 | grep -q 'dev eth0' && via_wan=1 && break; sleep 1; done;
+	 nslookup example.org 10.250.30.53 >/dev/null 2>&1 || refused=1;
 	 leaked=\$(nft list chain inet emu_leak post | sed -n 's/.*packets \\([0-9]*\\).*/\\1/p'); ifup vpn; nft delete table inet emu_leak;
-	 [ \$via_wan = 1 ] && [ \$refused = 1 ] && [ \"\$leaked\" = 0 ]"
+	 echo \"via WAN \$via_wan, refused \$refused, leaked \$leaked\"; [ \$via_wan = 1 ] && [ \$refused = 1 ] && [ \"\$leaked\" = 0 ]"
 eventually "the tunnel is back" "ip route show default | grep -q 'dev vpn' && $LAPTOP ping -c1 -W2 10.250.30.1"
 check "the VPN server's name is looked up through the uplink's DNS, which the rule leaves alone" \
 	"uci set supacudy.$VPN_ID.endpoint_host=wg.emu.test && uci commit supacudy && $(options true false) &&
