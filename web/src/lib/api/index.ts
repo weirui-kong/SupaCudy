@@ -19,3 +19,4 @@ export * from './ddns';
 export * from './netmode';
 export * from './adguard';
 export * from './tailscale';
+export * from './uplinks';

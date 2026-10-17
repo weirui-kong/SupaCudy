@@ -1083,4 +1083,46 @@ export class MockRouter {
     this.tailscale.signedIn = false;
     return this.ok({ applied: true });
   }
+
+  uplinks = {
+    order: ['wired', 'repeater', 'tethering'] as string[],
+    reset_connections: true,
+    targets4: ['223.5.5.5', '1.1.1.1', '8.8.8.8'],
+    targets6: ['2400:3200::1', '2606:4700:4700::1111', '2001:4860:4860::8888'],
+    watching: true,
+    active_v4: 'wired' as string | null,
+    active_v6: 'wired' as string | null,
+  };
+
+  m_uplinks_get() {
+    const u = this.uplinks;
+    const fam = (connected: boolean, online: boolean) => ({ connected, online, checked: connected ? 1_792_000_000 : null });
+    return this.ok({
+      ...structuredClone(u),
+      online_v4: u.watching ? u.active_v4 !== null : null,
+      online_v6: u.watching ? u.active_v6 !== null : null,
+      uplinks: u.order.map((name) => ({
+        name,
+        configured: name !== 'repeater',
+        v4: name === 'repeater' ? fam(false, false) : fam(true, name === u.active_v4 || name === 'tethering'),
+        v6: name === 'wired' ? fam(true, u.active_v6 === 'wired') : fam(name === 'tethering', name === 'tethering'),
+      })),
+    });
+  }
+
+  m_uplinks_set(a: Args) {
+    const names = ['wired', 'repeater', 'tethering'];
+    if (!Array.isArray(a.order) || a.order.length !== 3 || !names.every((n) => (a.order as string[]).includes(n)) ||
+        typeof a.reset_connections !== 'boolean')
+      return { status: INVALID };
+    const v4 = /^(\d{1,3}\.){3}\d{1,3}$/;
+    if (!Array.isArray(a.targets4) || !a.targets4.length || !(a.targets4 as string[]).every((t) => v4.test(t)))
+      return this.rejected('target_invalid', { family: 'ipv4' });
+    if (!Array.isArray(a.targets6) || !a.targets6.length || !(a.targets6 as string[]).every((t) => t.includes(':')))
+      return this.rejected('target_invalid', { family: 'ipv6' });
+    Object.assign(this.uplinks, {
+      order: a.order, reset_connections: a.reset_connections, targets4: a.targets4, targets6: a.targets6,
+    });
+    return this.ok({ applied: true });
+  }
 }

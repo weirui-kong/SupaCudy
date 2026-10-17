@@ -6,7 +6,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=supacudy-base
-PKG_VERSION:=0.3.0
+PKG_VERSION:=0.4.0
 PKG_RELEASE:=1
 
 PKG_LICENSE:=Apache-2.0
@@ -19,7 +19,7 @@ define Package/supacudy-base
   CATEGORY:=SupaCudy
   TITLE:=SupaCudy base system integration
   PKGARCH:=all
-  DEPENDS:=+uhttpd +uhttpd-mod-ubus +rpcd +ucode +ucode-mod-fs +ucode-mod-uci +ucode-mod-nl80211 +nftables
+  DEPENDS:=+uhttpd +uhttpd-mod-ubus +rpcd +ucode +ucode-mod-fs +ucode-mod-uci +ucode-mod-ubus +ucode-mod-nl80211 +nftables +conntrack
   # USB tethering. Kernel modules go in EXTRA_DEPENDS so the SDK records them
   # without rebuilding every kernel package; usbmuxd pairs iPhones.
   EXTRA_DEPENDS:=kmod-usb-net-rndis, kmod-usb-net-cdc-ether, kmod-usb-net-cdc-ncm, kmod-usb-net-ipheth, usbmuxd
@@ -49,11 +49,14 @@ define Package/supacudy-base/install
 	$(INSTALL_BIN) ./files/etc/init.d/supacudy $(1)/etc/init.d/
 	$(INSTALL_BIN) ./files/etc/init.d/supacudy-repeater $(1)/etc/init.d/
 	$(INSTALL_BIN) ./files/etc/init.d/supacudy-rescue $(1)/etc/init.d/
+	$(INSTALL_BIN) ./files/etc/init.d/supacudy-failover $(1)/etc/init.d/
 	$(INSTALL_DIR) $(1)/usr/libexec/supacudy
 	$(INSTALL_DATA) ./files/usr/libexec/supacudy/policy.uc $(1)/usr/libexec/supacudy/
 	$(INSTALL_BIN) ./files/usr/libexec/supacudy/repeater-watch $(1)/usr/libexec/supacudy/
 	$(INSTALL_DATA) ./files/usr/libexec/supacudy/rescue.uc $(1)/usr/libexec/supacudy/
 	$(INSTALL_BIN) ./files/usr/libexec/supacudy/rescue-watch $(1)/usr/libexec/supacudy/
+	$(INSTALL_DATA) ./files/usr/libexec/supacudy/failover.uc $(1)/usr/libexec/supacudy/
+	$(INSTALL_BIN) ./files/usr/libexec/supacudy/failover-watch $(1)/usr/libexec/supacudy/
 	$(INSTALL_BIN) ./files/usr/libexec/supacudy/dhcp-probe $(1)/usr/libexec/supacudy/
 	$(INSTALL_DIR) $(1)/etc/hotplug.d/net
 	$(INSTALL_DATA) ./files/etc/hotplug.d/net/30-supacudy-tethering $(1)/etc/hotplug.d/net/

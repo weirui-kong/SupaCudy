@@ -1,0 +1,13 @@
+#!/bin/sh
+# Copyright 2026 SupaCudy contributors
+# SPDX-License-Identifier: Apache-2.0
+
+# Every 10 s: a dead uplink is noticed within three checks (about 30 s).
+# The lock keeps a check started by the UI from overlapping this one.
+check() {
+	flock /var/run/supacudy-failover.lock ucode /usr/libexec/supacudy/failover.uc
+}
+check
+while sleep 10; do
+	check
+done

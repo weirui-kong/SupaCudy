@@ -60,8 +60,13 @@ check "base: version file matches package version" \
 	test "$(cat "$WORK/supacudy-base/data/etc/supacudy_version")" = "$(field supacudy-base Version)"
 check "base: uci-defaults script is executable" is_exec supacudy-base etc/uci-defaults/90-supacudy
 check "base: first-boot defaults script is executable" is_exec supacudy-base etc/uci-defaults/91-supacudy-defaults
-for f in etc/init.d/supacudy-rescue usr/libexec/supacudy/rescue-watch usr/libexec/supacudy/dhcp-probe; do
+for f in etc/init.d/supacudy-rescue usr/libexec/supacudy/rescue-watch usr/libexec/supacudy/dhcp-probe \
+	etc/init.d/supacudy-failover usr/libexec/supacudy/failover-watch; do
 	check "base: $f is executable" is_exec supacudy-base "$f"
+done
+check "base: ships the failover watcher" has_file supacudy-base usr/libexec/supacudy/failover.uc
+for dep in conntrack ucode-mod-ubus; do
+	check "base: depends on $dep" depends_on supacudy-base "$dep"
 done
 check "base: whoami CGI is executable" is_exec supacudy-base www/cgi-bin/supacudy-whoami
 check "base: ships the tethering hotplug script" has_file supacudy-base etc/hotplug.d/net/30-supacudy-tethering

@@ -20,7 +20,8 @@ import { methods as ddns } from 'supacudy.ddns';
 import { methods as netmode } from 'supacudy.netmode';
 import { methods as adguard } from 'supacudy.adguard';
 import { methods as remote } from 'supacudy.remote';
+import { methods as uplinks } from 'supacudy.uplinks';
 
 return {
-	supacudy: { ...system, ...clients, ...lan, ...wireless, ...internet, ...mac, ...dns, ...vpn, ...firewall, ...schedule, ...ddns, ...netmode, ...adguard, ...remote }
+	supacudy: { ...system, ...clients, ...lan, ...wireless, ...internet, ...mac, ...dns, ...vpn, ...firewall, ...schedule, ...ddns, ...netmode, ...adguard, ...remote, ...uplinks }
 };

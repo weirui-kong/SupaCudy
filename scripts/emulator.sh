@@ -105,12 +105,12 @@ cmd_start() {
 		-M virt "${accel[@]}" -smp 2 -m 512 \
 		-bios "$(firmware)" \
 		-drive "file=$DISK,format=raw,if=virtio" \
-		-netdev "user,id=wan,net=10.250.2.0/24" \
+		-netdev "user,id=wan,net=10.250.2.0/24,ipv6-net=2001:db8:2::/64" \
 		-device virtio-net-pci,netdev=wan,mac=52:54:00:fa:02:01 \
-		-netdev "user,id=mgmt,net=10.250.3.0/24,restrict=on,hostfwd=tcp:127.0.0.1:$HTTP_PORT-10.250.3.15:80,hostfwd=tcp:127.0.0.1:$SSH_PORT-10.250.3.15:22,hostfwd=tcp:127.0.0.1:$ADGUARD_PORT-10.250.3.15:3000" \
+		-netdev "user,id=mgmt,net=10.250.3.0/24,ipv6=off,restrict=on,hostfwd=tcp:127.0.0.1:$HTTP_PORT-10.250.3.15:80,hostfwd=tcp:127.0.0.1:$SSH_PORT-10.250.3.15:22,hostfwd=tcp:127.0.0.1:$ADGUARD_PORT-10.250.3.15:3000" \
 		-device virtio-net-pci,netdev=mgmt,mac=52:54:00:fa:03:01 \
 		-device qemu-xhci \
-		-netdev "user,id=phone,net=10.250.42.0/24" \
+		-netdev "user,id=phone,net=10.250.42.0/24,ipv6-net=2001:db8:42::/64" \
 		-device usb-net,netdev=phone \
 		-display none -serial "file:$CONSOLE" \
 		-daemonize -pidfile "$PIDFILE"

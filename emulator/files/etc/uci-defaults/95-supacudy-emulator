@@ -23,6 +23,10 @@ uci set "network.$lan_bridge.bridge_empty=1"
 uci set network.lan.ipaddr='192.168.200.1'
 uci set network.wan.device='eth0'
 uci set network.wan6.device='eth0'
+# QEMU's user network hands out addresses and a route but no delegated
+# prefix; this documentation prefix stands in for the one an ISP delegates,
+# so the LAN gets public IPv6 addresses from the wired uplink.
+uci set network.wan6.ip6prefix='2001:db8:250::/56'
 
 uci set network.mgmt=interface
 uci set network.mgmt.device='eth1'
@@ -50,6 +54,14 @@ uci set firewall.emu_uplink_wan.src='emu_uplink'
 uci set firewall.emu_uplink_wan.dest='wan'
 
 uci set system.@system[0].hostname='SupaCudy-Emulator'
+
+# The failover watcher's internet checks stay inside the emulator: each
+# uplink's QEMU gateway stands in for the internet behind it.
+uci set supacudy.failover=failover
+uci add_list supacudy.failover.target4='10.250.2.2'
+uci add_list supacudy.failover.target4='10.250.42.2'
+uci add_list supacudy.failover.target6='2001:db8:2::2'
+uci add_list supacudy.failover.target6='2001:db8:42::2'
 
 uci commit
 

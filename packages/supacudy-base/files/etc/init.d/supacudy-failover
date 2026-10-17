@@ -1,0 +1,22 @@
+#!/bin/sh /etc/rc.common
+# Copyright 2026 SupaCudy contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Uplink failover watcher, see /usr/libexec/supacudy/failover.uc.
+
+# shellcheck disable=SC2034 # read by rc.common
+START=99
+# shellcheck disable=SC2034 # read by rc.common
+USE_PROCD=1
+
+start_service() {
+	rm -f /var/run/supacudy/failover.json
+	procd_open_instance
+	procd_set_param command /usr/libexec/supacudy/failover-watch
+	procd_set_param respawn 3600 5 0
+	procd_close_instance
+}
+
+stop_service() {
+	ucode /usr/libexec/supacudy/failover.uc stop
+}

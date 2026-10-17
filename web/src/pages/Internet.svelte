@@ -14,6 +14,7 @@
   import JoinDialog from './internet/JoinDialog.svelte';
   import MacDialog from './internet/MacDialog.svelte';
   import WanDialog from './internet/WanDialog.svelte';
+  import PriorityCard from './internet/PriorityCard.svelte';
   import {
     disconnectRepeater, forgetNetwork, getInternetStatus, getMacSettings, getSavedNetworks, getWan, setRepeaterOptions,
     setTethering, setWanPortAsLan,
@@ -269,6 +270,7 @@
         </ul>
       </Card>
     {/if}
+    <div class="wide"><PriorityCard /></div>
   </div>
 {:else if !error}
   <p>{t('common.loading')}</p>
@@ -447,5 +449,9 @@
     .grid {
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     }
+  }
+
+  .wide {
+    grid-column: 1 / -1;
   }
 </style>

@@ -16,6 +16,11 @@ if [ -x /etc/init.d/https-dns-proxy ] && [ "$(uci -q get supacudy.dns.mode)" != 
 	/etc/init.d/https-dns-proxy disable
 fi
 
+# Uplink priority by route metric: Ethernet, then repeater (20) and
+# tethering (30), which the UI sets when it creates them. The failover
+# watcher's own routes sit below all three.
+[ -n "$(uci -q get network.wan.metric)" ] || { uci set network.wan.metric='10'; uci commit network; }
+
 # The tailscale package starts its daemon on install; it stays off until
 # remote access is turned on in the UI.
 if [ -x /etc/init.d/tailscale ] && [ "$(uci -q get supacudy.remote.tailscale)" != 1 ]; then

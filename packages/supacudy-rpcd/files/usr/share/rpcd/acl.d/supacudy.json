@@ -28,7 +28,8 @@
 					"netmode_get",
 					"rescue_get",
 					"adguard_get",
-					"tailscale_get"
+					"tailscale_get",
+					"uplinks_get"
 				]
 			}
 		},
@@ -91,7 +92,8 @@
 					"adguard_rules_set",
 					"adguard_web_set",
 					"tailscale_set",
-					"tailscale_logout"
+					"tailscale_logout",
+					"uplinks_set"
 				]
 			},
 			"cgi-io": [

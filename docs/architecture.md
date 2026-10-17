@@ -64,3 +64,13 @@ uhttpd ── /ubus ── rpcd（会话、ACL 权限）
 
 - IPv6 沿用 OpenWrt 默认（wan6 + odhcpd）。
 - VPN 连接时，如果配置没有 IPv6 地址（WireGuard 的地址里没有 IPv6；OpenVPN 文件里没有 `ifconfig-ipv6` / `route-ipv6`），IPv6 会绕过隧道走普通线路，所以：全局模式下加一条 fw4 规则 `supacudy_vpn_no6` 拒绝 LAN→WAN 的 IPv6；按设备分流时由 policy.uc 丢弃被选设备不走隧道的 IPv6（分流用的路由表只有 IPv4）。配置有 IPv6 地址时 VPN 区域打开 `masq6`。
+
+## 网络出口检测与切换
+
+`supacudy-failover` 服务每 10 秒运行一次 `/usr/libexec/supacudy/failover.uc`，在已连接的出口（有线 `wan`/`wan6`、中继 `wwan`/`wwan6`、手机共享 `tethering`/`tethering6`）中，分别为 IPv4 和 IPv6 选出优先级最高、且能上网的那个。设置在 `supacudy.failover`（优先级 `order`、切换时断开旧连接 `reset_connections`、检测地址 `target4`/`target6`），状态写在 `/var/run/supacudy/failover.json`，界面通过 `uplinks_get`/`uplinks_set` 读写。
+
+- **判定**：通过该出口 ping 检测地址（默认 223.5.5.5、1.1.1.1、8.8.8.8 和 2400:3200::1、2606:4700:4700::1111、2001:4860:4860::8888），任一回应即为可用。IPv4 按接口发出，IPv6 按该出口的源地址发出（netifd 的 IPv6 默认路由只匹配出口自己的源地址）。连续 3 次失败判定不可用，连续 5 次成功才恢复；新连上的出口按第一次检测结果判定。正在使用的出口每次都检测，备用出口每 3 次检测一次（节省手机流量），出问题或有更高优先级的出口待恢复时每次都检测。
+- **切换**：不改配置、不重启接口，只加我们自己的默认路由（`proto 99`，度量值 5）。netifd 的基础度量值按优先级排列（有线 10、中继 20、手机共享 30），VPN 的默认路由（度量值 0）仍优先。所有出口都不通时，IPv4 保留在优先级最高的已连接出口上，不会没有默认路由。
+- **局域网 IPv6**：跟着 IPv6 出口走。出口有委派前缀时，局域网只通告它的前缀（`lan.ip6class`），其他出口的前缀立即废弃；出口没有前缀时，局域网只用 ULA，并在该出口上做 NAT66（自有 nft 表 `ip6 supacudy_nat66`，只转换 ULA 源地址）；没有任何出口的 IPv6 可用时，路由通告的 router lifetime 设为 0（`dhcp.lan.ra_lifetime`），设备马上改用 IPv4。改过的这两项原值记在 `/etc/supacudy/failover-orig.json`，恢复正常或服务停止时还原。
+- **切换后**：开启“切换时断开旧连接”（默认）时，用 `conntrack -D` 删除经旧出口出去的连接（按旧出口地址和它的委派前缀），设备立即从新出口重连；有 VPN 时重新拉起隧道，让它连到服务器的路由走新出口。
+- 接入点模式下不工作。

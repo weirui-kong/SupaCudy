@@ -59,10 +59,23 @@ function default_route_iface() {
 	return best?.name;
 }
 
-// One quick probe; a router behind a captive portal answers ping but not
-// HTTP, which the UI will treat separately later.
-function internet_reachable() {
-	return run('ping -c1 -W2 1.1.1.1 >/dev/null || ping -c1 -W2 8.8.8.8 >/dev/null').code == 0;
+// The failover watcher (supacudy-base) probes every uplink; its state is the
+// answer. Without it (watcher not running yet) one quick probe.
+const FAILOVER_STATE = '/var/run/supacudy/failover.json';
+const UPLINK_IFACE = { wired: 'wan', repeater: 'wwan', tethering: 'tethering' };
+
+function failover_state() {
+	try {
+		return json(readfile(FAILOVER_STATE) ?? 'null');
+	} catch {
+		return null;
+	}
+}
+
+function internet_reachable(fo) {
+	if (fo)
+		return fo.online_v4 == true;
+	return run('ping -c1 -W2 223.5.5.5 >/dev/null || ping -c1 -W2 1.1.1.1 >/dev/null || ping -c1 -W2 8.8.8.8 >/dev/null').code == 0;
 }
 
 function sta_iface(cur) {
@@ -206,6 +219,29 @@ function wan_zone(cur) {
 	return zone;
 }
 
+// Every uplink gets IPv6 too, so the failover watcher can use it.
+function add_ipv6(cur, iface) {
+	if (cur.get('network', `${iface}6`))
+		return;
+	cur.set('network', `${iface}6`, 'interface');
+	cur.set('network', `${iface}6`, 'proto', 'dhcpv6');
+	cur.set('network', `${iface}6`, 'device', `@${iface}`);
+}
+
+function set_wan_zone(cur, names, member) {
+	const zone = wan_zone(cur);
+	if (!zone)
+		return;
+	const raw = cur.get('firewall', zone, 'network') ?? [];
+	let list = type(raw) == 'array' ? raw : split(raw, ' ');
+	for (let n in names)
+		if (member && !(n in list))
+			push(list, n);
+	if (!member)
+		list = filter(list, (n) => !(n in names));
+	cur.set('firewall', zone, 'network', list);
+}
+
 function tethering_set(req) {
 	if (type(req.args.enabled) != 'bool')
 		return req.error(INVALID);
@@ -213,23 +249,20 @@ function tethering_set(req) {
 	if (!cur.get('supacudy', 'tethering'))
 		cur.set('supacudy', 'tethering', 'tethering');
 	cur.set('supacudy', 'tethering', 'enabled', req.args.enabled ? '1' : '0');
-	const zone = wan_zone(cur);
-	const networks = zone ? cur.get('firewall', zone, 'network') ?? [] : [];
-	const list = type(networks) == 'array' ? networks : split(networks, ' ');
 	if (req.args.enabled) {
 		cur.set('network', 'tethering', 'interface');
 		cur.set('network', 'tethering', 'proto', 'dhcp');
-		// After Ethernet (0) and the repeater (20): the phone is the fallback.
+		// After Ethernet (10) and the repeater (20): the phone is the fallback.
 		cur.set('network', 'tethering', 'metric', '30');
 		const dev = tether_device();
 		if (dev)
 			cur.set('network', 'tethering', 'device', dev);
-		if (zone && !('tethering' in list))
-			cur.set('firewall', zone, 'network', [ ...list, 'tethering' ]);
+		add_ipv6(cur, 'tethering');
+		set_wan_zone(cur, [ 'tethering', 'tethering6' ], true);
 	} else {
 		cur.delete('network', 'tethering');
-		if (zone && ('tethering' in list))
-			cur.set('firewall', zone, 'network', filter(list, (n) => n != 'tethering'));
+		cur.delete('network', 'tethering6');
+		set_wan_zone(cur, [ 'tethering', 'tethering6' ], false);
 	}
 	cur.commit('supacudy');
 	cur.commit('network');
@@ -248,9 +281,11 @@ function status() {
 	const link = sta_link(sta_ifname());
 	const radio = repeater_conf ? cur.get_all('wireless', repeater_conf.device) : null;
 
+	const fo = failover_state();
 	return {
-		active: default_route_iface(),
-		internet: internet_reachable(),
+		active: fo ? (UPLINK_IFACE[fo.active_v4] ?? null) : default_route_iface(),
+		internet: internet_reachable(fo),
+		internet_v6: fo ? fo.online_v6 == true : null,
 		ethernet: {
 			configured: cur.get('network', 'wan') != null,
 			carrier: dev ? carrier(replace(dev, /^pppoe-/, '')) || (wan?.up ?? false) : false,
@@ -450,13 +485,8 @@ function ensure_wwan(cur) {
 		// Ethernet stays preferred while both are up.
 		cur.set('network', 'wwan', 'metric', '20');
 	}
-	cur.foreach('firewall', 'zone', (z) => {
-		if (z.name != 'wan')
-			return;
-		const nets = type(z.network) == 'array' ? z.network : split(z.network ?? '', ' ');
-		if (!('wwan' in nets))
-			cur.set('firewall', z['.name'], 'network', [...nets, 'wwan']);
-	});
+	add_ipv6(cur, 'wwan');
+	set_wan_zone(cur, [ 'wwan', 'wwan6' ], true);
 }
 
 function remember(cur, ssid, encryption, key) {
