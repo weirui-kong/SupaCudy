@@ -6,7 +6,8 @@
 # network namespace on this VM:
 #
 #   upstream  phy3: "Hotel-WiFi" (WPA2) and "Cafe-Free" (open) hotspots with
-#             DHCP, routed to the internet through veth-uplink; also a
+#             DHCP, routed to the internet through veth-uplink; a DNS server
+#             on 10.250.10.2 that knows vpn-test.example (10.250.30.7); a
 #             WireGuard server ("VPN provider") on 10.250.10.2:51820 and an
 #             OpenVPN server on 10.250.10.2:1194 (tunnel 10.250.31.0/24)
 #   phone     phy2: a Wi-Fi client of the router's 2.4 GHz network
@@ -178,6 +179,7 @@ setup_ovpn_server() {
 		key $OVPN/server.key
 		dh none
 		keepalive 5 20
+		push "dhcp-option DNS 10.250.31.1"
 		verb 1
 	EOF
 }
@@ -242,7 +244,8 @@ start_service() {
 
 	instance upstream-hostapd ip netns exec upstream hostapd "$RUN/hostapd-upstream.conf"
 	instance upstream-dhcp ip netns exec upstream dnsmasq --keep-in-foreground \
-		--conf-file=/dev/null --bind-dynamic --interface=up0 --interface=up1 \
+		--conf-file=/dev/null --bind-dynamic --interface=up0 --interface=up1 --interface=uplink0 \
+		--address=/vpn-test.example/10.250.30.7 \
 		--except-interface=lo --dhcp-range=up0,10.250.11.100,10.250.11.199,1h \
 		--dhcp-range=up1,10.250.12.100,10.250.12.199,1h --no-resolv --server=10.250.2.3 \
 		--pid-file="$RUN/dnsmasq-upstream.pid" --dhcp-leasefile="$RUN/dnsmasq-upstream.leases"

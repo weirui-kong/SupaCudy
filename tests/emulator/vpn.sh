@@ -51,7 +51,28 @@ VPN_ID="$(vm cat /tmp/vpn-id)"
 check "editing the connected profile is accepted" \
 	"ubus call supacudy vpn_profile_set '{\"id\":\"$VPN_ID\",$KEEPALIVE_40}' | grep -q '\"id\"'"
 eventually "the new peer settings reach the running tunnel" "wg show vpn persistent-keepalive | grep -q '[[:space:]]40\$'"
+check "the profile gets a second DNS server that only exists in the tunnel" \
+	"uci add_list supacudy.$VPN_ID.dns=10.250.30.53 && uci commit supacudy"
 check "the kill switch is turned on without the LAN exception" "$(options true false)"
+check "with the kill switch, the VPN's DNS may only be used through the tunnel" \
+	"[ \"\$(uci get firewall.supacudy_vpn_dns.dest_ip)\" = 10.250.30.53 ] &&
+	 uci get dhcp.@dnsmasq[0].server | grep -q 10.250.30.53"
+eventually "the DNS rule is loaded" "nft list chain inet fw4 output_wan | grep -q 10.250.30.53"
+# The interface going away, not just the server: then the route to the VPN's
+# DNS server falls back to the WAN, which is where a lookup would leak.
+check "with the tunnel gone, the router's lookups to it are rejected instead of leaving through the WAN" \
+	"count() { nft list chain inet fw4 output_wan | sed -n '/10.250.30.53/s/.*packets \\([0-9]*\\).*/\\1/p' | awk '{n += \$1} END {print n + 0}'; }
+	 ifdown vpn; sleep 2; before=\$(count); nslookup example.org 10.250.30.53 >/dev/null 2>&1; after=\$(count); ifup vpn;
+	 [ \"\$after\" -gt \"\$before\" ]"
+eventually "the tunnel is back" "ip route show default | grep -q 'dev vpn' && $LAPTOP ping -c1 -W2 10.250.30.1"
+check "the VPN server's name is looked up through the uplink's DNS, which the rule leaves alone" \
+	"uci set supacudy.$VPN_ID.endpoint_host=wg.emu.test && uci commit supacudy && $(options true false) &&
+	 uci get dhcp.@dnsmasq[0].server | grep -q '/wg.emu.test/10.250.2.3' &&
+	 [ \"\$(uci get firewall.supacudy_vpn_dns.dest_ip)\" = 10.250.30.53 ]"
+check "the profile is back to its address and one DNS server" \
+	"uci set supacudy.$VPN_ID.endpoint_host=10.250.10.2 && uci del_list supacudy.$VPN_ID.dns=10.250.30.53 &&
+	 uci commit supacudy && $(options true false) && ! uci get dhcp.@dnsmasq[0].server | grep -q 'wg.emu.test\|10.250.30.53' &&
+	 ! uci -q get firewall.supacudy_vpn_dns"
 check "the server goes away" "$SERVER ip link set wg0 down"
 eventually "with the tunnel down, LAN devices cannot get around it" \
 	"! $LAPTOP ping -c1 -W2 10.250.2.2"
@@ -80,14 +101,37 @@ eventually "the laptop is cut off while the NAS stays online" \
 	"! $LAPTOP ping -c1 -W2 10.250.2.2 && $NAS ping -c1 -W2 10.250.2.2"
 check "all devices use the VPN again" "$(options false true all)"
 check "the server is back" "$SERVER ip link set wg0 up"
+# Its address is private, which rebind protection would otherwise drop.
+check "vpn-test.example is answered by the upstream's DNS server" \
+	"uci add_list dhcp.@dnsmasq[0].server=/vpn-test.example/10.250.10.2 &&
+	 uci add_list dhcp.@dnsmasq[0].rebind_domain=vpn-test.example && uci commit dhcp && /etc/init.d/dnsmasq restart"
+# AdGuard Home now has the answer cached, so dnsmasq would not see the next
+# lookup unless that cache is cleared when the website is routed.
+eventually "the NAS looks the website up before it goes through the VPN" \
+	"$NAS nslookup vpn-test.example 192.168.200.1 | grep -q 10.250.30.7"
 check "only the server's tunnel address and a website go through the VPN" "$(options false true selected '' '"10.250.30.1/32","vpn-test.example"')"
-eventually "dnsmasq collects the website's addresses and the routes are marked" \
-	"grep -q '^nftset=/vpn-test.example/4#inet#supacudy_vpnroute#vpn_dst' /var/etc/dnsmasq.conf.* &&
+eventually "dnsmasq is told to collect the website's addresses" \
+	"grep -q '^nftset=/vpn-test.example/4#inet#supacudy_vpnroute#vpn_dns' /var/etc/dnsmasq.conf.* &&
 	 nft list set inet supacudy_vpnroute vpn_dst | grep -q 10.250.30.1"
+learned=0
+for _ in $(seq 8); do
+	if vm "$NAS nslookup vpn-test.example 192.168.200.1 >/dev/null; nft list set inet supacudy_vpnroute vpn_dns | grep -q 10.250.30.7" >/dev/null 2>&1; then
+		learned=1
+		break
+	fi
+	sleep 2
+done
+if [ "$learned" = 1 ]; then ok "the next lookup puts the website's address in the VPN set at once"; else not_ok "the next lookup puts the website's address in the VPN set at once"; fi
+check "learned addresses survive a reload of the routing rules" \
+	"/etc/init.d/supacudy reload && sleep 2 && nft list set inet supacudy_vpnroute vpn_dns | grep -q 10.250.30.7"
 eventually "the NAS reaches the tunnel address through the VPN" "$NAS ping -c1 -W2 10.250.30.1"
 check "other destinations stay on the normal path" "$NAS ping -c1 -W2 10.250.2.2"
 check "a malformed destination is refused" \
 	"ubus call supacudy vpn_options '{\"kill_switch\":false,\"allow_lan\":true,\"route_mode\":\"selected\",\"devices\":[],\"destinations\":[\"not a host\"]}' | grep -q destination_invalid"
+check "removing the website forgets its addresses" \
+	"$(options false true selected '' '"10.250.30.1/32"') && sleep 3 && ! nft list set inet supacudy_vpnroute vpn_dns | grep -q 10.250.30.7 &&
+	 uci del_list dhcp.@dnsmasq[0].server=/vpn-test.example/10.250.10.2 &&
+	 uci del_list dhcp.@dnsmasq[0].rebind_domain=vpn-test.example && uci commit dhcp"
 check "all devices use the VPN once more" "$(options false true all)"
 eventually "the routes return to the main table" \
 	"ip route show default | grep -q 'dev vpn' && ! ip rule | grep -q 'fwmark 0x100' && ! nft list table inet supacudy_vpnroute 2>/dev/null | grep -q vpn_macs"

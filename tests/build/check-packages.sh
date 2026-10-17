@@ -81,6 +81,10 @@ for module in "$ROOT"/packages/supacudy-rpcd/files/usr/share/ucode/supacudy/*.uc
 	check "rpcd: ships the $(basename "$module" .uc) module" \
 		has_file supacudy-rpcd "usr/share/ucode/supacudy/$(basename "$module")"
 done
+check "rpcd: ships the VPN DNS helper" has_file supacudy-rpcd usr/libexec/supacudy/vpn-dns.uc
+for f in etc/hotplug.d/openvpn/30-supacudy-dns etc/hotplug.d/iface/30-supacudy-vpn-dns; do
+	check "rpcd: $f is executable" is_exec supacudy-rpcd "$f"
+done
 check "rpcd: ships the ACL"              has_file supacudy-rpcd usr/share/rpcd/acl.d/supacudy.json
 check "rpcd: has a postinst that restarts rpcd" \
 	grep -q 'rpcd restart' "$WORK/supacudy-rpcd/control/postinst-pkg"

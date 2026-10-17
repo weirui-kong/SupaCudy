@@ -1,0 +1,31 @@
+#!/bin/sh
+# Copyright 2026 SupaCudy contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# OpenVPN passes the options the server pushed as foreign_option_1, _2, ...
+# The DNS servers among them go to supacudy.vpn. On "down" nothing changes:
+# the tunnel is usually reconnecting, and the kill switch keeps those
+# servers from being used outside it meanwhile.
+
+[ "$INSTANCE" = supacudy ] && [ "$ACTION" = up ] || exit 0
+
+servers=""
+i=1
+while :; do
+	eval "option=\${foreign_option_$i:-}"
+	[ -n "$option" ] || break
+	# shellcheck disable=SC2086 # split the option into its words
+	set -- $option
+	case "$1 $2" in
+		"dhcp-option DNS"|"dhcp-option DNS6")
+			case "$3" in
+				*[!0-9A-Fa-f:.]*|"") ;;
+				*) servers="$servers $3" ;;
+			esac
+			;;
+	esac
+	i=$((i + 1))
+done
+
+# shellcheck disable=SC2086 # one server per argument, checked above
+ucode /usr/libexec/supacudy/vpn-dns.uc pushed $servers

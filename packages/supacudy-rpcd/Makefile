@@ -7,7 +7,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=supacudy-rpcd
 PKG_VERSION:=0.4.0
-PKG_RELEASE:=1
+PKG_RELEASE:=2
 
 PKG_LICENSE:=Apache-2.0
 PKG_MAINTAINER:=SupaCudy contributors
@@ -45,6 +45,10 @@ define Package/supacudy-rpcd/install
 	$(INSTALL_BIN) ./files/etc/uci-defaults/92-supacudy-adguard $(1)/etc/uci-defaults/
 	$(INSTALL_DIR) $(1)/usr/share/rpcd/acl.d
 	$(INSTALL_DATA) ./files/usr/share/rpcd/acl.d/supacudy.json $(1)/usr/share/rpcd/acl.d/
+	$(INSTALL_DIR) $(1)/usr/libexec/supacudy $(1)/etc/hotplug.d/openvpn $(1)/etc/hotplug.d/iface
+	$(INSTALL_DATA) ./files/usr/libexec/supacudy/vpn-dns.uc $(1)/usr/libexec/supacudy/
+	$(INSTALL_BIN) ./files/etc/hotplug.d/openvpn/30-supacudy-dns $(1)/etc/hotplug.d/openvpn/
+	$(INSTALL_BIN) ./files/etc/hotplug.d/iface/30-supacudy-vpn-dns $(1)/etc/hotplug.d/iface/
 endef
 
 define Package/supacudy-rpcd/postinst

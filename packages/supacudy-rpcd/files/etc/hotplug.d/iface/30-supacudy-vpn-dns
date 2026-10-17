@@ -1,0 +1,11 @@
+#!/bin/sh
+# Copyright 2026 SupaCudy contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# The VPN server's name is looked up through the uplinks' DNS servers
+# (supacudy.vpn), which change when an uplink comes up or renews its lease.
+
+case "$ACTION" in ifup|ifupdate) ;; *) exit 0 ;; esac
+case "$INTERFACE" in lan|vpn|loopback|mgmt) exit 0 ;; esac
+[ -n "$(uci -q get supacudy.vpn.active)" ] || exit 0
+ucode /usr/libexec/supacudy/vpn-dns.uc refresh

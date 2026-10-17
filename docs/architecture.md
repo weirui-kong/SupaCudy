@@ -74,3 +74,10 @@ uhttpd ── /ubus ── rpcd（会话、ACL 权限）
 - **局域网 IPv6**：跟着 IPv6 出口走。出口有委派前缀时，局域网只通告它的前缀（`lan.ip6class`），其他出口的前缀立即废弃；出口没有前缀时，局域网只用 ULA，并在该出口上做 NAT66（自有 nft 表 `ip6 supacudy_nat66`，只转换 ULA 源地址）；没有任何出口的 IPv6 可用时，路由通告的 router lifetime 设为 0（`dhcp.lan.ra_lifetime`），设备马上改用 IPv4。改过的这两项原值记在 `/etc/supacudy/failover-orig.json`，恢复正常或服务停止时还原。
 - **切换后**：开启“切换时断开旧连接”（默认）时，用 `conntrack -D` 删除经旧出口出去的连接（按旧出口地址和它的委派前缀），设备立即从新出口重连；有 VPN 时重新拉起隧道，让它连到服务器的路由走新出口。
 - 接入点模式下不工作。
+
+## VPN 与 DNS
+
+- 全局模式 + 自动 DNS 时，dnsmasq 只用 VPN 配置的 DNS（WireGuard 配置里的；OpenVPN 文件里的 `dhcp-option DNS`，以及服务器连上后下发的，由 `/etc/hotplug.d/openvpn/30-supacudy-dns` 交给 `vpn-dns.uc`）。AdGuard Home 仍在最前面过滤。
+- VPN 服务器的域名（如果是域名）在隧道建立前就要解析，所以这一个域名交给出口的 DNS（`server=/域名/出口 DNS`），出口 DNS 变化时由 `/etc/hotplug.d/iface/30-supacudy-vpn-dns` 更新。
+- 开启断网保护时，加一条 fw4 规则 `supacudy_vpn_dns`：路由器发往 VPN DNS 服务器的 53/853 端口只能走隧道，隧道不在时直接拒绝，不会从普通线路泄露查询的域名（和出口 DNS 相同的地址除外）。
+- 按网站分流：dnsmasq 把网站的地址加入 `inet supacudy_vpnroute` 的 `vpn_dns` 集合；这个集合在规则重新加载时保留，只在网站列表变化时清空。连接、断开、修改 VPN 选项后都会清掉 AdGuard Home 的缓存，让查询重新经过 dnsmasq。

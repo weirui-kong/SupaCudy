@@ -7,8 +7,8 @@
 //   - inet supacudy_block: drops routed traffic from blocked clients
 //   - bridge supacudy_limit: per-MAC upload/download rate limits
 //   - inet supacudy_vpnroute: marks traffic that uses the VPN when not all
-//     does (chosen devices, and destinations in @vpn_dst, which dnsmasq fills
-//     with the addresses of chosen domains); netifd routes marked packets
+//     does (chosen devices, destinations in @vpn_dst, and in @vpn_dns the
+//     addresses dnsmasq learns for chosen domains); netifd routes marked packets
 //     through the VPN's table, and the kill switch drops them elsewhere
 //
 //   ucode /usr/libexec/supacudy/policy.uc
@@ -85,33 +85,33 @@ function vpn_policy() {
 	};
 }
 
+// Addresses dnsmasq learns for VPN websites go to @vpn_dns, which is kept
+// across reloads: devices and AdGuard Home cache their answers, so a set
+// emptied here would stay empty until those expire. vpn.uc empties it when
+// the list of websites changes.
 function vpn_script(v) {
-	let s = 'table inet supacudy_vpnroute\ndelete table inet supacudy_vpnroute\n';
+	const T = 'inet supacudy_vpnroute';
 	if (!v.on)
-		return s;
-	s += 'table inet supacudy_vpnroute {\n';
-	s += '\tset vpn_macs { type ether_addr; ';
+		return `table ${T}\ndelete table ${T}\n`;
+	let s = `add table ${T}\n`;
+	s += `add set ${T} vpn_dns { type ipv4_addr; flags interval; }\n`;
+	s += `add set ${T} vpn_macs { type ether_addr; }\nflush set ${T} vpn_macs\n`;
 	if (length(v.devices))
-		s += `elements = { ${join(', ', v.devices)} }; `;
-	s += '}\n';
-	s += '\tset vpn_dst { type ipv4_addr; flags interval; ';
+		s += `add element ${T} vpn_macs { ${join(', ', v.devices)} }\n`;
+	s += `add set ${T} vpn_dst { type ipv4_addr; flags interval; }\nflush set ${T} vpn_dst\n`;
 	if (length(v.cidrs))
-		s += `elements = { ${join(', ', v.cidrs)} }; `;
-	s += '}\n';
-	s += '\tchain pre {\n\t\ttype filter hook prerouting priority mangle; policy accept;\n';
-	s += `\t\tiifname "br-lan" ether saddr @vpn_macs meta mark set meta mark | ${VPN_MARK}\n`;
-	s += `\t\tiifname "br-lan" ip daddr @vpn_dst counter meta mark set meta mark | ${VPN_MARK}\n\t}\n`;
-	s += '\tchain forward {\n\t\ttype filter hook forward priority -3; policy accept;\n';
+		s += `add element ${T} vpn_dst { ${join(', ', v.cidrs)} }\n`;
+	s += `add chain ${T} pre { type filter hook prerouting priority mangle; policy accept; }\nflush chain ${T} pre\n`;
+	s += `add rule ${T} pre iifname "br-lan" ether saddr @vpn_macs meta mark set meta mark | ${VPN_MARK}\n`;
+	s += `add rule ${T} pre iifname "br-lan" ip daddr @vpn_dst counter meta mark set meta mark | ${VPN_MARK}\n`;
+	s += `add rule ${T} pre iifname "br-lan" ip daddr @vpn_dns counter meta mark set meta mark | ${VPN_MARK}\n`;
+	s += `add chain ${T} forward { type filter hook forward priority -3; policy accept; }\nflush chain ${T} forward\n`;
 	// Marked IPv6 is not routed into the tunnel (its table is IPv4 only),
 	// so the chosen devices' IPv6 is dropped instead of leaking.
-	s += '\t\tiifname "br-lan" ether saddr @vpn_macs meta nfproto ipv6 oifname != { "vpn", "br-lan" } counter drop\n';
-	if (v.kill) {
-		s += `\t\tmeta mark & ${VPN_MARK} == ${VPN_MARK} oifname != { "vpn", "br-lan" } `;
-		s += v.allow_lan ? `ip daddr != ${PRIVATE} ` : '';
-		s += 'counter drop\n';
-	}
-	s += '\t}\n';
-	s += '}\n';
+	s += `add rule ${T} forward iifname "br-lan" ether saddr @vpn_macs meta nfproto ipv6 oifname != { "vpn", "br-lan" } counter drop\n`;
+	if (v.kill)
+		s += `add rule ${T} forward meta mark & ${VPN_MARK} == ${VPN_MARK} oifname != { "vpn", "br-lan" } ` +
+			(v.allow_lan ? `ip daddr != ${PRIVATE} ` : '') + 'counter drop\n';
 	return s;
 }
 

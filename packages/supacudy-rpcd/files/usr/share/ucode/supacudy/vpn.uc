@@ -15,6 +15,7 @@
 
 import { access, mkdir, readfile, unlink, writefile, chmod } from 'fs';
 import { INVALID, NOT_FOUND, ubus, uci, run, run_later, fail, ipv4_to_int, normalize_mac } from 'supacudy.util';
+import { CLEAR_CACHE_CMD } from 'supacudy.adguard';
 
 const IFACE = 'vpn';
 const PEER = 'vpn_peer';
@@ -22,6 +23,9 @@ const ZONE = 'supacudy_vpn';
 const LAN_FORWARD = 'supacudy_vpn_fwd';
 const ALLOW_LAN_RULE = 'supacudy_vpn_lan';
 const NO_IPV6_RULE = 'supacudy_vpn_no6';
+const DNS_TUNNEL_RULE = 'supacudy_vpn_dns';
+// DNS servers of the connected uplinks, written by netifd.
+const RESOLV_AUTO = '/tmp/resolv.conf.d/resolv.conf.auto';
 const PRIVATE_RANGES = [ '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16' ];
 const PROFILES_MAX = 16;
 const DEVICES_MAX = 64;
@@ -32,8 +36,8 @@ const VPN_TABLE = '100';
 const VPN_RULE = 'supacudy_vpn_rule';
 const VPN_MARK = '0x100';
 const DESTINATIONS_MAX = 64;
-// dnsmasq adds the addresses of these domains to policy.uc's set as it
-// answers lookups for them.
+// dnsmasq adds the addresses of these domains to policy.uc's set vpn_dns as
+// it answers lookups for them.
 const DOMAIN_SET = 'supacudy_vpn_domains';
 const DOMAIN_RE = /^([A-Za-z0-9]([A-Za-z0-9-]{0,62})\.)+[A-Za-z]{2,63}$/;
 
@@ -275,6 +279,43 @@ function ensure_zone(cur) {
 	cur.set('firewall', LAN_FORWARD, 'dest', 'vpn');
 }
 
+function uplink_dns() {
+	const out = [];
+	for (let line in split(readfile(RESOLV_AUTO) ?? '', '\n')) {
+		const m = match(line, /^nameserver[ \t]+([0-9A-Fa-f:.]+)/);
+		if (m && is_ip(m[1]) && !(m[1] in out) && substr(m[1], 0, 4) != '127.' && m[1] != '::1')
+			push(out, m[1]);
+	}
+	return out;
+}
+
+// The VPN server's name, if it has one. The router looks it up again
+// whenever the tunnel is (re)built, i.e. while the VPN's own DNS cannot be
+// reached, so that one name goes to the uplink's DNS servers.
+function endpoint_name(cur) {
+	const id = cur.get('supacudy', 'vpn', 'active');
+	const kind = profile_type(cur, id);
+	let host = null;
+	if (kind == 'wireguard')
+		host = cur.get('supacudy', id, 'endpoint_host');
+	else if (kind == 'openvpn') {
+		const remote = cur.get('supacudy', id, 'remote') ?? '';
+		// More than one colon is an IPv6 address with its port.
+		host = length(split(remote, ':')) > 2 ? null : split(remote, ':')[0];
+	}
+	return host && !is_ip(host) && match(host, HOST_RE) ? lc(host) : null;
+}
+
+// The DNS servers the connected profile brings: its own, and for OpenVPN
+// also those the server pushed (see ovpn_pushed_dns).
+function profile_dns(cur) {
+	const id = cur.get('supacudy', 'vpn', 'active');
+	if (!id)
+		return [];
+	const pushed = profile_type(cur, id) == 'openvpn' ? as_list(cur.get('supacudy', 'vpn', 'pushed_dns')) : [];
+	return uniq([ ...as_list(cur.get('supacudy', id, 'dns')), ...pushed ]);
+}
+
 // The kill switch acts only while a profile is connected: then LAN traffic
 // may leave only through the tunnel (plus private ranges if allowed), even
 // when the tunnel itself is down.
@@ -305,6 +346,24 @@ function apply_firewall(cur) {
 	} else if (cur.get('firewall', NO_IPV6_RULE)) {
 		cur.delete('firewall', NO_IPV6_RULE);
 	}
+	// With the kill switch, the VPN's DNS servers are reachable only through
+	// the tunnel: while it is down the router's own lookups would otherwise
+	// leave through the uplink. The uplink's own servers stay reachable for
+	// the VPN server's name (see endpoint_name).
+	const uplink = uplink_dns();
+	const vpn_dns = filter(as_list(cur.get('supacudy', 'vpn', 'dns_servers')),
+		(d) => substr(d, 0, 1) != '/' && !(d in uplink));
+	if (kill && length(vpn_dns)) {
+		cur.set('firewall', DNS_TUNNEL_RULE, 'rule');
+		cur.set('firewall', DNS_TUNNEL_RULE, 'name', 'SupaCudy VPN: DNS only through the tunnel');
+		cur.set('firewall', DNS_TUNNEL_RULE, 'dest', 'wan');
+		cur.set('firewall', DNS_TUNNEL_RULE, 'dest_ip', vpn_dns);
+		cur.set('firewall', DNS_TUNNEL_RULE, 'proto', 'tcp udp');
+		cur.set('firewall', DNS_TUNNEL_RULE, 'dest_port', '53 853');
+		cur.set('firewall', DNS_TUNNEL_RULE, 'target', 'REJECT');
+	} else if (cur.get('firewall', DNS_TUNNEL_RULE)) {
+		cur.delete('firewall', DNS_TUNNEL_RULE);
+	}
 	if (kill && allow_lan) {
 		cur.set('firewall', ALLOW_LAN_RULE, 'rule');
 		cur.set('firewall', ALLOW_LAN_RULE, 'name', 'SupaCudy VPN: upstream network');
@@ -320,19 +379,25 @@ function apply_firewall(cur) {
 
 // With automatic DNS, lookups would still go to the upstream network's
 // servers; send them to the profile's servers instead while connected.
-function apply_dns(cur, servers) {
+// Returns whether dnsmasq's settings changed.
+function apply_dns(cur) {
 	let section = null;
 	cur.foreach('dhcp', 'dnsmasq', (s) => {
 		section ??= s['.name'];
 	});
 	if (!section)
-		return;
+		return false;
+	const before = join(' ', as_list(cur.get('dhcp', section, 'server')));
 	const previous = as_list(cur.get('supacudy', 'vpn', 'dns_servers'));
 	const kept = filter(as_list(cur.get('dhcp', section, 'server')), (s) => !(s in previous));
 	// Everyone shares dnsmasq, so with only some devices on the VPN the
 	// lookups stay on the normal path (its DNS may only work in the tunnel).
 	const auto = (cur.get('supacudy', 'dns', 'mode') ?? 'auto') == 'auto' && route_mode(cur) == 'all';
-	const add = auto ? servers : [];
+	const add = auto ? profile_dns(cur) : [];
+	const host = length(add) ? endpoint_name(cur) : null;
+	if (host)
+		for (let d in uplink_dns())
+			push(add, `/${host}/${d}`);
 	if (length(kept) + length(add))
 		cur.set('dhcp', section, 'server', [ ...kept, ...add ]);
 	else
@@ -347,6 +412,7 @@ function apply_dns(cur, servers) {
 		cur.set('supacudy', 'vpn', 'dns_servers', add);
 	else
 		cur.delete('supacudy', 'vpn', 'dns_servers');
+	return join(' ', as_list(cur.get('dhcp', section, 'server'))) != before;
 }
 
 function apply_routing(cur) {
@@ -407,17 +473,23 @@ function write_openvpn(cur, id, enabled) {
 
 // tunnel_changed: the profile or connection changed, so the tunnel is
 // restarted. Option changes (kill switch, routing) leave it up.
-function commit_all(cur, tunnel_changed) {
+// AdGuard Home answers repeated lookups from its cache, which dnsmasq then
+// never sees, so the cache is cleared for the websites routed through the
+// VPN to be learned again (and with the VPN's DNS to take effect at once).
+function commit_all(cur, tunnel_changed, websites_changed) {
 	for (let c in [ 'network', 'firewall', 'dhcp', 'supacudy' ])
 		cur.commit(c);
-	let cmd = '/etc/init.d/network reload; /etc/init.d/firewall reload; /etc/init.d/dnsmasq restart; /etc/init.d/supacudy reload';
+	let cmd = websites_changed ? `nft flush set inet supacudy_vpnroute vpn_dns; ` : '';
+	// The routing rules first: dnsmasq reads the type of the set it fills
+	// for websites when it starts.
+	cmd += '/etc/init.d/network reload; /etc/init.d/firewall reload; /etc/init.d/supacudy reload; /etc/init.d/dnsmasq restart';
 	if (tunnel_changed) {
 		// Re-raising the interface applies changed WireGuard peers, which a
 		// netifd reload alone leaves as they were.
 		const wg = cur.get('network', IFACE, 'proto') == 'wireguard';
 		cmd += `; /etc/init.d/openvpn restart${wg ? `; ifup ${IFACE}` : ''}`;
 	}
-	run_later(cmd, 1);
+	run_later(`${cmd}; ${CLEAR_CACHE_CMD}`, 1);
 }
 
 function vpn_profile_set(req) {
@@ -459,7 +531,8 @@ function vpn_profile_set(req) {
 	if (cur.get('supacudy', 'vpn', 'active') == id) {
 		const p = cur.get_all('supacudy', id);
 		write_interface(cur, p);
-		apply_dns(cur, as_list(p.dns));
+		apply_dns(cur);
+		apply_firewall(cur);
 		commit_all(cur, true);
 	} else {
 		cur.commit('supacudy');
@@ -496,6 +569,7 @@ function vpn_connect(req) {
 	ensure_vpn_section(cur);
 	ensure_zone(cur);
 	cur.set('supacudy', 'vpn', 'active', id);
+	cur.delete('supacudy', 'vpn', 'pushed_dns');
 	if (kind == 'openvpn') {
 		write_openvpn(cur, id, true);
 		apply_routing(cur);
@@ -506,8 +580,8 @@ function vpn_connect(req) {
 		}
 		write_interface(cur, p);
 	}
+	apply_dns(cur);
 	apply_firewall(cur);
-	apply_dns(cur, kind == 'openvpn' ? [] : as_list(p.dns));
 	commit_all(cur, true);
 	return { applied: true };
 }
@@ -522,9 +596,10 @@ function vpn_disconnect() {
 	cur.delete('network', IFACE);
 	cur.delete('network', PEER);
 	cur.set('supacudy', 'vpn', 'active', '');
+	cur.delete('supacudy', 'vpn', 'pushed_dns');
 	apply_routing(cur);
+	apply_dns(cur);
 	apply_firewall(cur);
-	apply_dns(cur, []);
 	commit_all(cur, true);
 	return { applied: true };
 }
@@ -537,7 +612,7 @@ function apply_domains(cur, domains) {
 	if (!length(domains))
 		return;
 	cur.set('dhcp', DOMAIN_SET, 'ipset');
-	cur.set('dhcp', DOMAIN_SET, 'name', [ 'vpn_dst' ]);
+	cur.set('dhcp', DOMAIN_SET, 'name', [ 'vpn_dns' ]);
 	cur.set('dhcp', DOMAIN_SET, 'table', 'supacudy_vpnroute');
 	cur.set('dhcp', DOMAIN_SET, 'table_family', 'inet');
 	cur.set('dhcp', DOMAIN_SET, 'domain', domains);
@@ -570,6 +645,7 @@ function vpn_options(req) {
 		return req.error(INVALID);
 	const cur = uci();
 	ensure_vpn_section(cur);
+	const websites_changed = join(' ', as_list(cur.get('supacudy', 'vpn', 'domains'))) != join(' ', uniq(domains));
 	cur.set('supacudy', 'vpn', 'kill_switch', a.kill_switch ? '1' : '0');
 	cur.set('supacudy', 'vpn', 'allow_lan', a.allow_lan ? '1' : '0');
 	cur.set('supacudy', 'vpn', 'route_mode', a.route_mode);
@@ -581,18 +657,19 @@ function vpn_options(req) {
 	}
 	apply_domains(cur, uniq(domains));
 	apply_routing(cur);
+	apply_dns(cur);
 	apply_firewall(cur);
 	const id = cur.get('supacudy', 'vpn', 'active');
-	apply_dns(cur, id ? as_list(cur.get('supacudy', id, 'dns')) : []);
 	// While connected the routing mode touches netifd and dnsmasq too.
 	if (id) {
-		commit_all(cur, false);
+		commit_all(cur, false, websites_changed);
 	} else {
 		cur.commit('network');
 		cur.commit('firewall');
 		cur.commit('dhcp');
 		cur.commit('supacudy');
-		run_later('/etc/init.d/firewall reload; /etc/init.d/supacudy reload; /etc/init.d/dnsmasq restart', 1);
+		run_later((websites_changed ? 'nft flush set inet supacudy_vpnroute vpn_dns; ' : '') +
+			`/etc/init.d/firewall reload; /etc/init.d/supacudy reload; /etc/init.d/dnsmasq restart; ${CLEAR_CACHE_CMD}`, 1);
 	}
 	return { applied: true };
 }
@@ -603,6 +680,7 @@ function sanitize_ovpn(text) {
 	let inline = null;
 	let remote = null;
 	let tap = false;
+	const dns = [];
 	for (let line in split(replace(text, /\r/g, ''), '\n')) {
 		const t = trim(line);
 		if (inline) {
@@ -628,6 +706,12 @@ function sanitize_ovpn(text) {
 			tap = true;
 		if (word in OVPN_DROP)
 			continue;
+		// Servers in the file itself; pushed ones arrive via the hotplug script.
+		if (word == 'dhcp-option') {
+			const f = split(t, /[ \t]+/);
+			if ((f[1] == 'DNS' || f[1] == 'DNS6') && is_ip(f[2]) && !(f[2] in dns))
+				push(dns, f[2]);
+		}
 		if (word == 'remote' && !remote) {
 			const f = split(t, /[ \t]+/);
 			remote = f[2] ? `${f[1]}:${f[2]}` : f[1];
@@ -638,7 +722,7 @@ function sanitize_ovpn(text) {
 		return { refused: 'dev tap' };
 	if (!remote)
 		return { refused: 'remote' };
-	return { config: join('\n', out), remote };
+	return { config: join('\n', out), remote, dns };
 }
 
 function vpn_ovpn_set(req) {
@@ -686,6 +770,10 @@ function vpn_ovpn_set(req) {
 	if (clean) {
 		writefile(`${OVPN_DIR}/${id}.base`, clean.config);
 		cur.set('supacudy', id, 'remote', clean.remote);
+		if (length(clean.dns))
+			cur.set('supacudy', id, 'dns', clean.dns);
+		else
+			cur.delete('supacudy', id, 'dns');
 	}
 	// The device name is fixed so network.vpn can find it.
 	const extra = [ `dev ${OVPN_DEV}`, 'dev-type tun' ];
@@ -693,14 +781,19 @@ function vpn_ovpn_set(req) {
 		push(extra, `auth-user-pass ${auth}`);
 	writefile(`${OVPN_DIR}/${id}.ovpn`, `${body}\n${join('\n', extra)}\n`);
 	chmod(`${OVPN_DIR}/${id}.ovpn`, 0600);
-	// The new file may add or drop IPv6 in the tunnel.
-	if (cur.get('supacudy', 'vpn', 'active') == id) {
+	// The new file may bring other DNS servers or add or drop IPv6 in the
+	// tunnel; the server pushes its DNS again once it has reconnected.
+	const active = cur.get('supacudy', 'vpn', 'active') == id;
+	if (active) {
+		cur.delete('supacudy', 'vpn', 'pushed_dns');
+		apply_dns(cur);
 		apply_firewall(cur);
 		cur.commit('firewall');
+		cur.commit('dhcp');
 	}
 	cur.commit('supacudy');
-	if (cur.get('supacudy', 'vpn', 'active') == id)
-		run_later('/etc/init.d/firewall reload; /etc/init.d/openvpn restart', 1);
+	if (active)
+		run_later(`/etc/init.d/firewall reload; /etc/init.d/dnsmasq restart; /etc/init.d/openvpn restart; ${CLEAR_CACHE_CMD}`, 1);
 	return { id };
 }
 
@@ -719,4 +812,36 @@ const methods = {
 	vpn_options: { args: { kill_switch: false, allow_lan: false, route_mode: '', devices: [], destinations: [] }, call: vpn_options }
 };
 
-export { methods };
+// For /usr/libexec/supacudy/vpn-dns.uc, run by hotplug as root.
+
+// The DNS servers an OpenVPN server pushed when the tunnel came up.
+function ovpn_pushed_dns(servers) {
+	const cur = uci();
+	if (profile_type(cur, cur.get('supacudy', 'vpn', 'active')) != 'openvpn')
+		return;
+	const list = uniq(filter(servers, is_ip));
+	if (join(' ', list) == join(' ', as_list(cur.get('supacudy', 'vpn', 'pushed_dns'))))
+		return;
+	if (length(list))
+		cur.set('supacudy', 'vpn', 'pushed_dns', list);
+	else
+		cur.delete('supacudy', 'vpn', 'pushed_dns');
+	apply_dns(cur);
+	apply_firewall(cur);
+	for (let c in [ 'dhcp', 'firewall', 'supacudy' ])
+		cur.commit(c);
+	run_later(`/etc/init.d/dnsmasq restart; /etc/init.d/firewall reload; ${CLEAR_CACHE_CMD}`, 0);
+}
+
+// An uplink's DNS servers changed: the VPN server's name follows them.
+function refresh_vpn_dns() {
+	const cur = uci();
+	if (!cur.get('supacudy', 'vpn', 'active') || !apply_dns(cur))
+		return;
+	apply_firewall(cur);
+	for (let c in [ 'dhcp', 'firewall', 'supacudy' ])
+		cur.commit(c);
+	run_later('/etc/init.d/dnsmasq restart; /etc/init.d/firewall reload', 0);
+}
+
+export { methods, ovpn_pushed_dns, refresh_vpn_dns };
