@@ -43,7 +43,9 @@ test.describe('clients', () => {
   test('explains a failed change and keeps the old state', async ({ page, router }, testInfo) => {
     const m = messages(testInfo);
     router.failNext('client_block', { status: 0, data: { error: 'something_new' } });
-    await page.getByRole('switch', { name: fill(m.clients.block_named, { name: 'Work-Laptop' }) }).check();
+    // Clicked, not checked: the switch goes back as soon as the router refuses,
+    // which on a slow machine can be before check() looks.
+    await page.getByRole('switch', { name: fill(m.clients.block_named, { name: 'Work-Laptop' }) }).click();
 
     await expect(page.getByRole('alert')).toContainText(fill(m.errors.rejected, { reason: 'something_new' }));
     expect(router.clients[0].blocked).toBe(false);

@@ -93,7 +93,7 @@ test.describe('ad blocking', () => {
     const m = messages(testInfo);
     router.failNext('adguard_logging_set', { status: 0, data: { error: 'adguard_refused' } });
     const stats = card(page, m.adblock.stats);
-    await stats.getByRole('switch', { name: m.adblock.keep_querylog }).check();
+    await stats.getByRole('switch', { name: m.adblock.keep_querylog }).click();
     await expect(page.getByRole('alert')).toContainText(m.errors.reasons.adguard_refused);
     await expect(stats.getByRole('switch', { name: m.adblock.keep_querylog })).not.toBeChecked();
     expect(router.adguard.logging).toEqual({ statistics: false, querylog: false });
