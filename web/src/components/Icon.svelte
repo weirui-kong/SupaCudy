@@ -9,7 +9,7 @@
     | 'close' | 'refresh' | 'wifi' | 'ethernet' | 'phone' | 'laptop' | 'desktop'
     | 'tablet' | 'tv' | 'camera' | 'printer' | 'speaker' | 'watch' | 'game'
     | 'appliance' | 'nas' | 'device' | 'more' | 'edit' | 'block' | 'speed'
-    | 'trash' | 'plus' | 'network' | 'arrow-up' | 'arrow-down' | 'chevron-right'
+    | 'trash' | 'plus' | 'network' | 'arrow-up' | 'arrow-down' | 'chevron-right' | 'chevron-down'
     | 'shield' | 'key' | 'lock' | 'apps' | 'power' | 'upload' | 'clock' | 'link'
     | 'qr' | 'usb' | 'list' | 'guest' | 'dns' | 'pin' | 'download';
 
@@ -55,6 +55,7 @@
     'arrow-up': 'M12 19V5M6 11l6-6 6 6',
     'arrow-down': 'M12 5v14M6 13l6 6 6-6',
     'chevron-right': 'M9 5l7 7-7 7',
+    'chevron-down': 'M5 9l7 7 7-7',
     shield: 'M12 2.5 20 6v6c0 4.7-3.4 8.4-8 9.5-4.6-1.1-8-4.8-8-9.5V6zM8.5 12l2.5 2.5 4.5-5',
     key: 'M14.5 9.5a5 5 0 1 0-4.6 5L12 16.5h2.5V19H17v2.5h4V18l-6.5-6.5a5 5 0 0 0 0-2ZM16 7h.01',
     lock: 'M5.5 10.5h13v10h-13zM8.5 10.5V7a3.5 3.5 0 0 1 7 0v3.5M12 14.5v2.5',
