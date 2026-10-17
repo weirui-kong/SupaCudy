@@ -77,7 +77,10 @@ cmd_image() {
 	cp -RP "$ROOT/emulator/files" "$overlay"
 	mkdir -p "$overlay/etc/dropbear"
 	cp "$KEY.pub" "$overlay/etc/dropbear/authorized_keys"
-	chmod 600 "$overlay/etc/dropbear/authorized_keys"
+	# Readable by others: the ImageBuilder container copies the overlay as an
+	# unprivileged user with another uid (Linux enforces it, Docker Desktop
+	# does not). It is only a public key, and dropbear accepts the mode.
+	chmod 644 "$overlay/etc/dropbear/authorized_keys"
 	"$ROOT/scripts/build-image.sh" ${1:+"$1"} emulator
 }
 
