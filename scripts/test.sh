@@ -49,7 +49,7 @@ web_deps() {
 emulator_chain() {
 	run emulator-image "$ROOT/scripts/emulator.sh" image
 	if passed emulator-image; then
-		run emulator "$ROOT/tests/emulator/check-scenario.sh"
+		run emulator "$ROOT/tests/emulator/run.sh"
 	else
 		skip emulator "emulator image did not build"
 	fi

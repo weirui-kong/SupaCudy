@@ -1,0 +1,9 @@
+#!/bin/sh
+# Copyright 2026 SupaCudy contributors
+# SPDX-License-Identifier: Apache-2.0
+
+# A lost upstream takes a moment to show; 20 s avoids flapping between
+# networks on a brief dropout.
+while sleep 20; do
+	ubus call supacudy repeater_tick >/dev/null 2>&1
+done

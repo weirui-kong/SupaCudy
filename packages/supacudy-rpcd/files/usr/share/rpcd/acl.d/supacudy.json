@@ -3,10 +3,115 @@
 		"description": "SupaCudy web UI",
 		"read": {
 			"ubus": {
-				"session": [ "destroy" ],
-				"supacudy": [ "info", "status" ]
+				"session": [
+					"destroy"
+				],
+				"supacudy": [
+					"info",
+					"status",
+					"clients_list",
+					"lan_get",
+					"wifi_get",
+					"internet_status",
+					"wan_get",
+					"repeater_saved",
+					"time_get",
+					"firmware_check",
+					"setup_status",
+					"log_get",
+					"mac_get",
+					"dns_get",
+					"vpn_get",
+					"firewall_get",
+					"schedule_get",
+					"ddns_get",
+					"netmode_get",
+					"rescue_get",
+					"adguard_get",
+					"tailscale_get"
+				]
 			}
 		},
-		"write": {}
+		"write": {
+			"ubus": {
+				"supacudy": [
+					"client_set",
+					"client_block",
+					"client_limit",
+					"clients_forget_offline",
+					"clients_reset_counters",
+					"lan_set",
+					"reservation_set",
+					"reservation_delete",
+					"wifi_set",
+					"guest_set",
+					"wan_set",
+					"repeater_scan",
+					"repeater_connect",
+					"repeater_disconnect",
+					"repeater_forget",
+					"repeater_options",
+					"repeater_tick",
+					"time_set",
+					"password_set",
+					"reboot",
+					"factory_reset",
+					"firmware_upgrade",
+					"firmware_discard",
+					"setup_complete",
+					"mac_set",
+					"dns_set",
+					"vpn_profile_set",
+					"vpn_profile_delete",
+					"vpn_connect",
+					"vpn_disconnect",
+					"vpn_options",
+					"tethering_set",
+					"wan_port_set",
+					"vpn_ovpn_set",
+					"forward_set",
+					"forward_delete",
+					"open_port_set",
+					"open_port_delete",
+					"dmz_set",
+					"dns_rebind_set",
+					"host_set",
+					"host_delete",
+					"offload_set",
+					"schedule_set",
+					"parental_set",
+					"parental_delete",
+					"ddns_set",
+					"netmode_set",
+					"adguard_set",
+					"adguard_protection",
+					"adguard_list_add",
+					"adguard_list_set",
+					"adguard_list_remove",
+					"adguard_rules_set",
+					"adguard_web_set",
+					"tailscale_set",
+					"tailscale_logout"
+				]
+			},
+			"cgi-io": [
+				"upload"
+			],
+			"file": {
+				"/tmp/firmware.bin": [
+					"write"
+				]
+			}
+		}
+	},
+	"unauthenticated": {
+		"description": "SupaCudy first-run greeting before login",
+		"read": {
+			"ubus": {
+				"supacudy": [
+					"setup_status"
+				]
+			}
+		}
 	}
 }

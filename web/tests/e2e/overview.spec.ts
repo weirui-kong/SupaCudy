@@ -1,8 +1,7 @@
 // Copyright 2026 SupaCudy contributors
 // SPDX-License-Identifier: Apache-2.0
 
-import { expect, test } from '@playwright/test';
-import { expectPageQuality, loginAndWait, messages } from './helpers';
+import { expect, expectPageQuality, loginAndWait, messages, test } from './helpers';
 
 test.describe('overview', () => {
   test.beforeEach(async ({ page }, testInfo) => {
@@ -13,15 +12,25 @@ test.describe('overview', () => {
     const m = messages(testInfo);
     const row = (label: string) => page.locator('.row', { has: page.getByText(label, { exact: true }) }).locator('dd');
 
-    await expect(row(m.overview.model)).toHaveText('SupaCudy smoke test');
+    await expect(row(m.overview.model)).toHaveText('Cudy TR3000 v1');
     await expect(row(m.overview.openwrt)).toContainText(/^\d+\.\d+\.\d+/);
     await expect(row(m.overview.uptime)).not.toHaveText(m.common.unavailable);
     await expect(row(m.overview.cpus)).toHaveText(/^\d+$/);
     await expect(page.getByRole('meter', { name: m.overview.memory })).toHaveAttribute('aria-valuetext', /^\d+%$/);
+    await expect(page.getByRole('meter', { name: m.overview.storage })).toHaveAttribute('aria-valuetext', '30%');
   });
 
-  test('passes the quality checks', async ({ page }) => {
-    await expect(page.getByRole('meter')).toBeVisible();
+  test('shows the network map and links to the internet page', async ({ page }, testInfo) => {
+    const m = messages(testInfo);
+    const map = page.getByRole('navigation', { name: m.overview.topology });
+    await expect(map).toContainText(m.internet.ethernet);
+    await expect(map).toContainText(m.overview.clients_online.replace('{count}', '3'));
+    await map.getByRole('link', { name: new RegExp(m.nav.internet) }).click();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText(m.nav.internet);
+  });
+
+  test('passes the quality checks', async ({ page }, testInfo) => {
+    await expect(page.getByRole('meter', { name: messages(testInfo).overview.memory })).toBeVisible();
     await expectPageQuality(page);
   });
 
@@ -43,5 +52,21 @@ test.describe('overview', () => {
       await page.keyboard.press('Escape');
       await expect(tip).toBeHidden();
     }
+  });
+
+  test('keeps a tooltip next to its trigger while scrolling', async ({ page }, testInfo) => {
+    const m = messages(testInfo);
+    await page.setViewportSize({ width: page.viewportSize()!.width, height: 420 });
+    const trigger = page.getByRole('button', { name: m.common.more_info }).first();
+    await trigger.click();
+    const tip = page.getByRole('tooltip').filter({ hasText: m.overview.load_hint });
+    await expect(tip).toBeVisible();
+
+    await page.evaluate(() => window.scrollBy(0, 60));
+    await expect.poll(async () => {
+      const [a, b] = [await trigger.boundingBox(), await tip.boundingBox()];
+      return a && b ? Math.round(b.y - (a.y + a.height)) : null;
+    }).toBe(8);
+
   });
 });

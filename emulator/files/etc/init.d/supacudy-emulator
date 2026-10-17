@@ -6,8 +6,12 @@
 # network namespace on this VM:
 #
 #   upstream  phy3: "Hotel-WiFi" (WPA2) and "Cafe-Free" (open) hotspots with
-#             DHCP, routed to the internet through veth-uplink
+#             DHCP, routed to the internet through veth-uplink; also a
+#             WireGuard server ("VPN provider") on 10.250.10.2:51820 and an
+#             OpenVPN server on 10.250.10.2:1194 (tunnel 10.250.31.0/24)
 #   phone     phy2: a Wi-Fi client of the router's 2.4 GHz network
+#   visitor   phy4: joins the guest network "SupaCudy-Guest" (password
+#             guest-pass-1) whenever one with that name exists
 #   laptop    wired LAN client on br-lan
 #   nas       wired LAN client on br-lan
 #
@@ -26,6 +30,12 @@ ROUTER_KEY='supacudy-wifi'
 HOTEL_SSID='Hotel-WiFi'
 HOTEL_KEY='hotel-guest'
 CAFE_SSID='Cafe-Free'
+GUEST_SSID='SupaCudy-Guest'
+GUEST_KEY='guest-pass-1'
+# Test-only keys, published in docs/emulator.md; never use them elsewhere.
+VPN_SERVER_KEY='+Gb6D8AumHBmmcI/kZ40HOkWkIyy+GYl/a2C9XwZcls='
+VPN_CLIENT_PUB='XdLB/OQnZ4OXQxwH8gFgHgdN4eTU+P5nEMFDMGjEpB0='
+VPN_PSK='irMdu0PKEDRBjbj/oi0azFqXoQ6PlS7h9dY2NMRHFp8='
 
 log() {
 	logger -t supacudy-emulator "$*"
@@ -80,6 +90,8 @@ configure_router_wifi() {
 		delete wireless.default_radio2
 		delete wireless.radio3
 		delete wireless.default_radio3
+		delete wireless.radio4
+		delete wireless.default_radio4
 		commit wireless
 	EOF
 	wifi reload
@@ -91,10 +103,10 @@ setup_upstream() {
 
 	if ! ip link show veth-uplink >/dev/null 2>&1; then
 		ip link add veth-uplink type veth peer name uplink0 netns upstream
-		ip addr add 10.250.10.1/30 dev veth-uplink
 		ip link set veth-uplink up
-		# The firewall zone matches the device by name, so reload it now
-		# that the device exists.
+		# netifd (network.emu_uplink) addresses it once the device exists;
+		# the firewall zone matches the device by name, so reload it too.
+		ifup emu_uplink
 		/etc/init.d/firewall reload
 	fi
 
@@ -113,6 +125,8 @@ setup_upstream() {
 		}
 	EOF
 
+	setup_vpn_server
+
 	mkdir -p "$RUN"
 	cat > "$RUN/hostapd-upstream.conf" <<-EOF
 		interface=up0
@@ -130,6 +144,44 @@ setup_upstream() {
 	EOF
 }
 
+# Tunnel 10.250.30.0/24; decrypted traffic leaves through uplink0 and is
+# masqueraded like the hotspot guests.
+setup_vpn_server() {
+	command -v wg >/dev/null || return 0
+	mkdir -p "$RUN"
+	umask 077
+	echo "$VPN_SERVER_KEY" > "$RUN/wg-server.key"
+	echo "$VPN_PSK" > "$RUN/wg-server.psk"
+	umask 022
+	in_ns upstream ip link show wg0 >/dev/null 2>&1 || in_ns upstream ip link add wg0 type wireguard
+	in_ns upstream wg set wg0 private-key "$RUN/wg-server.key" listen-port 51820 \
+		peer "$VPN_CLIENT_PUB" preshared-key "$RUN/wg-server.psk" allowed-ips 10.250.30.2/32
+	in_ns upstream ip addr replace 10.250.30.1/24 dev wg0
+	in_ns upstream ip link set wg0 up
+}
+
+# Test-only certificates in $OVPN, see docs/emulator.md.
+OVPN=/usr/share/supacudy-emulator/openvpn
+
+setup_ovpn_server() {
+	command -v openvpn >/dev/null || return 1
+	mkdir -p "$RUN"
+	cat > "$RUN/openvpn-server.conf" <<-EOF
+		dev ovpns
+		dev-type tun
+		proto udp
+		port 1194
+		topology subnet
+		server 10.250.31.0 255.255.255.0
+		ca $OVPN/ca.crt
+		cert $OVPN/server.crt
+		key $OVPN/server.key
+		dh none
+		keepalive 5 20
+		verb 1
+	EOF
+}
+
 setup_phone() {
 	ensure_ns phone
 	move_phy phy2 phone ph0
@@ -139,6 +191,19 @@ setup_phone() {
 		network={
 			ssid="$ROUTER_SSID"
 			psk="$ROUTER_KEY"
+		}
+	EOF
+}
+
+setup_visitor() {
+	ensure_ns visitor
+	move_phy phy4 visitor vi0
+	mkdir -p "$RUN"
+	cat > "$RUN/wpa-visitor.conf" <<-EOF
+		ctrl_interface=$RUN/wpa-visitor
+		network={
+			ssid="$GUEST_SSID"
+			psk="$GUEST_KEY"
 		}
 	EOF
 }
@@ -171,6 +236,7 @@ start_service() {
 	configure_router_wifi
 	setup_upstream
 	setup_phone
+	setup_visitor
 	setup_wired laptop 02:5c:00:00:00:11
 	setup_wired nas 02:5c:00:00:00:12
 
@@ -181,10 +247,16 @@ start_service() {
 		--dhcp-range=up1,10.250.12.100,10.250.12.199,1h --no-resolv --server=10.250.2.3 \
 		--pid-file="$RUN/dnsmasq-upstream.pid" --dhcp-leasefile="$RUN/dnsmasq-upstream.leases"
 	instance upstream-addr "$LIB/upstream-addresses"
+	if setup_ovpn_server; then
+		instance upstream-openvpn ip netns exec upstream openvpn --config "$RUN/openvpn-server.conf"
+	fi
 
 	instance phone-wpa ip netns exec phone wpa_supplicant -i ph0 -c "$RUN/wpa-phone.conf"
 	instance phone-dhcp ip netns exec phone udhcpc -f -i ph0 -x hostname:Pixel-Phone -s "$LIB/udhcpc.script"
 	instance phone-traffic ip netns exec phone "$LIB/traffic" 3
+
+	instance visitor-wpa ip netns exec visitor wpa_supplicant -i vi0 -c "$RUN/wpa-visitor.conf"
+	instance visitor-dhcp ip netns exec visitor udhcpc -f -i vi0 -x hostname:Guest-Tablet -s "$LIB/udhcpc.script"
 
 	instance laptop-dhcp ip netns exec laptop udhcpc -f -i eth0 -x hostname:Work-Laptop -s "$LIB/udhcpc.script"
 	instance laptop-traffic ip netns exec laptop "$LIB/traffic" 1
@@ -192,7 +264,7 @@ start_service() {
 }
 
 stop_service() {
-	for ns in upstream phone laptop nas; do
+	for ns in upstream phone visitor laptop nas; do
 		ip netns del "$ns" 2>/dev/null
 	done
 	ip link del veth-uplink 2>/dev/null

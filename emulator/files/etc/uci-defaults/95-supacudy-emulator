@@ -13,7 +13,11 @@
 lan_bridge="$(uci show network | sed -n "s/^network\.\(@device\[[0-9]*\]\)\.name='br-lan'$/\1/p")"
 lan_zone="$(uci show firewall | sed -n "s/^firewall\.\(@zone\[[0-9]*\]\)\.name='lan'$/\1/p")"
 
+# The scenario's wired clients; listing them lets netifd re-add them when it
+# rebuilds the bridge (network restart, operating mode changes).
 uci -q delete "network.$lan_bridge.ports"
+uci add_list "network.$lan_bridge.ports=veth-laptop"
+uci add_list "network.$lan_bridge.ports=veth-nas"
 uci set "network.$lan_bridge.bridge_empty=1"
 
 uci set network.lan.ipaddr='192.168.200.1'
@@ -28,7 +32,13 @@ uci set network.mgmt.netmask='255.255.255.0'
 uci add_list "firewall.$lan_zone.network=mgmt"
 
 # The upstream hotspot reaches the internet through the router's own WAN,
-# like a hotel network behind its own uplink.
+# like a hotel network behind its own uplink. netifd manages the link so its
+# host routes (e.g. to the VPN server living upstream) use it, not the WAN.
+uci set network.emu_uplink=interface
+uci set network.emu_uplink.device='veth-uplink'
+uci set network.emu_uplink.proto='static'
+uci set network.emu_uplink.ipaddr='10.250.10.1'
+uci set network.emu_uplink.netmask='255.255.255.252'
 uci set firewall.emu_uplink=zone
 uci set firewall.emu_uplink.name='emu_uplink'
 uci add_list firewall.emu_uplink.device='veth-uplink'

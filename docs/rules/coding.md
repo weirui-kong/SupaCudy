@@ -40,7 +40,7 @@
 - Package names start with `supacudy-` and use `PKGARCH:=all`.
 - Any change that ends up in an `.ipk` bumps `PKG_VERSION` or `PKG_RELEASE`.
 - Declare every dependency in `DEPENDS`; never rely on a package that happens to be in the image.
-- A new dependency needs a stated reason and a check that the 128MB flash image still fits.
+- A new dependency needs a stated reason and a check that the image still fits the 256MB TR3000 (the only supported model).
 
 ## Front-end
 

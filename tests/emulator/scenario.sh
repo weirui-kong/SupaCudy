@@ -2,43 +2,8 @@
 # Copyright 2026 SupaCudy contributors
 # SPDX-License-Identifier: Apache-2.0
 #
-# Emulator tests: boot a fresh VM and check that the emulated network the
-# feature tests rely on is really there.
-#
-#   tests/emulator/check-scenario.sh            boot, check, stop
-#   tests/emulator/check-scenario.sh --keep     leave the VM running
-
-set -euo pipefail
-
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-EMU="$ROOT/scripts/emulator.sh"
-KEEP="${1:-}"
-
-FAILED=0
-ok()     { echo "ok - $*"; }
-not_ok() { echo "not ok - $*"; FAILED=1; }
-
-vm() { "$EMU" ssh -o BatchMode=yes -o ConnectTimeout=10 "$@"; }
-
-# Retries for up to 60 s: radios, DHCP and association settle after boot.
-eventually() {
-	local desc="$1" cmd="$2"
-	for _ in $(seq 30); do
-		if vm "$cmd" >/dev/null 2>&1; then
-			ok "$desc"
-			return
-		fi
-		sleep 2
-	done
-	not_ok "$desc"
-	vm "$cmd" 2>&1 | sed 's/^/    | /' || true
-}
-
-"$EMU" stop >/dev/null
-"$EMU" start --fresh
-[ "$KEEP" = --keep ] || trap '"$EMU" stop >/dev/null' EXIT
-
-eventually "ssh login with the emulator key" "true"
+# Emulator tests for the emulated network itself, which every feature test
+# relies on. Sourced by run.sh.
 
 eventually "WAN has an address from the QEMU network" \
 	"ip -4 addr show dev eth0 | grep -q 'inet 10.250.2.'"
@@ -69,15 +34,11 @@ eventually "upstream reaches the internet through the uplink" \
 
 eventually "SupaCudy UI is served" \
 	"wget -q -O - http://127.0.0.1/supacudy/ | grep -q '<title>SupaCudy</title>'"
-if curl -fsS "http://127.0.0.1:${EMU_HTTP_PORT:-8088}/supacudy/" | grep -q '<title>SupaCudy</title>'; then
+if curl -fsS "http://127.0.0.1:$EMU_HTTP_PORT/supacudy/" | grep -q '<title>SupaCudy</title>'; then
 	ok "UI reachable from the host on 127.0.0.1"
 else
 	not_ok "UI reachable from the host on 127.0.0.1"
 fi
-
-if [ "$FAILED" = 0 ]; then
-	echo "emulator tests: PASS"
-else
-	echo "emulator tests: FAIL" >&2
-	exit 1
-fi
+eventually "the supacudy API answers" "ubus call supacudy info"
+eventually "the client policy tables are loaded" \
+	"nft list table bridge supacudy_acct && nft list table inet supacudy_block"

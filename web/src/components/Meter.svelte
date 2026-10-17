@@ -3,17 +3,28 @@
   SPDX-License-Identifier: Apache-2.0
 -->
 <script lang="ts">
-  let { label, value, max }: { label: string; value: number; max: number } = $props();
+  let {
+    label,
+    value,
+    max,
+    progress = false,
+  }: {
+    label: string;
+    value: number;
+    max: number;
+    /** A task advancing to completion rather than a level that can run high. */
+    progress?: boolean;
+  } = $props();
 
   const ratio = $derived(max > 0 ? Math.min(1, Math.max(0, value / max)) : 0);
   // Above 90% the bar changes color, and the percentage text says it too.
-  const high = $derived(ratio >= 0.9);
+  const high = $derived(!progress && ratio >= 0.9);
 </script>
 
 <div class="meter">
   <div
     class="track"
-    role="meter"
+    role={progress ? 'progressbar' : 'meter'}
     aria-label={label}
     aria-valuemin={0}
     aria-valuemax={max}

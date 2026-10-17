@@ -1,0 +1,15 @@
+#!/bin/sh
+# Copyright 2026 SupaCudy contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# http://router/ opens SupaCudy instead of LuCI. uhttpd tries the index
+# names in order in every directory, so /www/supacudy-start.html wins at
+# the top while LuCI's /www/index.html stays untouched for upgrades.
+
+if [ -z "$(uci -q get uhttpd.main.index_page)" ]; then
+	uci add_list uhttpd.main.index_page='supacudy-start.html'
+	uci add_list uhttpd.main.index_page='index.html'
+	uci commit uhttpd
+fi
+
+exit 0

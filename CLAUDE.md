@@ -22,7 +22,7 @@ The detailed rules are split by category below; all of them apply:
 ```bash
 scripts/test.sh                         # all automated tests (required before push)
 scripts/build-packages.sh               # build the .ipk packages
-scripts/build-image.sh cudy-tr3000-v1   # build a firmware image
+scripts/build-image.sh cudy-tr3000-256mb-v1  # build a firmware image (256MB TR3000 only)
 scripts/smoke-test.sh --keep            # run in a container, open http://localhost:8080/supacudy/
 npm --prefix web run dev                # front-end dev server, proxies /ubus to that container
 scripts/test-e2e.sh                     # only the Playwright tests

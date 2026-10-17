@@ -1,0 +1,161 @@
+// Copyright 2026 SupaCudy contributors
+// SPDX-License-Identifier: Apache-2.0
+//
+// Applies per-client policy from /etc/config/supacudy to nftables:
+//   - bridge supacudy_acct: per-MAC byte counters, created once and never
+//     regenerated so the counters survive policy changes
+//   - inet supacudy_block: drops routed traffic from blocked clients
+//   - bridge supacudy_limit: per-MAC upload/download rate limits
+//   - inet supacudy_vpnroute: marks traffic that uses the VPN when not all
+//     does (chosen devices, and destinations in @vpn_dst, which dnsmasq fills
+//     with the addresses of chosen domains); netifd routes marked packets
+//     through the VPN's table, and the kill switch drops them elsewhere
+//
+//   ucode /usr/libexec/supacudy/policy.uc
+
+'use strict';
+
+import { cursor } from 'uci';
+import { popen, writefile } from 'fs';
+
+const MAC = /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/;
+const SCRIPT = '/tmp/supacudy-policy.nft';
+
+function nft_ok(cmd) {
+	const p = popen(cmd);
+	if (!p)
+		return false;
+	p.read('all');
+	return p.close() == 0;
+}
+
+// Unicast only: broadcast and multicast frames would otherwise add bogus
+// elements such as ff:ff:ff:ff:ff:ff.
+const ACCT = `
+table bridge supacudy_acct {
+	set up { type ether_addr; flags dynamic; counter; size 4096; }
+	set down { type ether_addr; flags dynamic; counter; size 4096; }
+	chain pre {
+		type filter hook prerouting priority -5; policy accept;
+		ether saddr and 01:00:00:00:00:00 == 00:00:00:00:00:00 update @up { ether saddr }
+	}
+	chain post {
+		type filter hook postrouting priority -5; policy accept;
+		ether daddr and 01:00:00:00:00:00 == 00:00:00:00:00:00 update @down { ether daddr }
+	}
+}
+`;
+
+function clients() {
+	const out = [];
+	const uci = cursor();
+
+	uci.foreach('supacudy', 'client', (s) => {
+		const mac = lc(s.mac ?? '');
+		if (!match(mac, MAC))
+			return;
+		push(out, {
+			mac,
+			blocked: s.blocked == '1',
+			up: +(s.up_limit ?? 0) || 0,
+			down: +(s.down_limit ?? 0) || 0
+		});
+	});
+
+	return out;
+}
+
+// Must match the mark in vpn.uc's routing rule.
+const VPN_MARK = '0x100';
+const PRIVATE = '{ 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 }';
+
+function vpn_policy() {
+	const uci = cursor();
+	const raw = uci.get('supacudy', 'vpn', 'devices');
+	const devices = filter(map(type(raw) == 'array' ? raw : (raw ? [ raw ] : []), lc), (m) => match(m, MAC));
+	const routes = uci.get('supacudy', 'vpn', 'routes');
+	const cidrs = filter(type(routes) == 'array' ? routes : (routes ? [ routes ] : []),
+		(r) => match(r, /^\d{1,3}(\.\d{1,3}){3}(\/\d{1,2})?$/));
+	return {
+		on: !!uci.get('supacudy', 'vpn', 'active') && uci.get('supacudy', 'vpn', 'route_mode') == 'selected',
+		devices,
+		cidrs,
+		kill: uci.get('supacudy', 'vpn', 'kill_switch') == '1',
+		allow_lan: uci.get('supacudy', 'vpn', 'allow_lan') != '0'
+	};
+}
+
+function vpn_script(v) {
+	let s = 'table inet supacudy_vpnroute\ndelete table inet supacudy_vpnroute\n';
+	if (!v.on)
+		return s;
+	s += 'table inet supacudy_vpnroute {\n';
+	s += '\tset vpn_macs { type ether_addr; ';
+	if (length(v.devices))
+		s += `elements = { ${join(', ', v.devices)} }; `;
+	s += '}\n';
+	s += '\tset vpn_dst { type ipv4_addr; flags interval; ';
+	if (length(v.cidrs))
+		s += `elements = { ${join(', ', v.cidrs)} }; `;
+	s += '}\n';
+	s += '\tchain pre {\n\t\ttype filter hook prerouting priority mangle; policy accept;\n';
+	s += `\t\tiifname "br-lan" ether saddr @vpn_macs meta mark set meta mark | ${VPN_MARK}\n`;
+	s += `\t\tiifname "br-lan" ip daddr @vpn_dst counter meta mark set meta mark | ${VPN_MARK}\n\t}\n`;
+	s += '\tchain forward {\n\t\ttype filter hook forward priority -3; policy accept;\n';
+	// Marked IPv6 is not routed into the tunnel (its table is IPv4 only),
+	// so the chosen devices' IPv6 is dropped instead of leaking.
+	s += '\t\tiifname "br-lan" ether saddr @vpn_macs meta nfproto ipv6 oifname != { "vpn", "br-lan" } counter drop\n';
+	if (v.kill) {
+		s += `\t\tmeta mark & ${VPN_MARK} == ${VPN_MARK} oifname != { "vpn", "br-lan" } `;
+		s += v.allow_lan ? `ip daddr != ${PRIVATE} ` : '';
+		s += 'counter drop\n';
+	}
+	s += '\t}\n';
+	s += '}\n';
+	return s;
+}
+
+function policy_script(list) {
+	const blocked = filter(list, (c) => c.blocked);
+	const limited = filter(list, (c) => c.up > 0 || c.down > 0);
+	let s = 'table inet supacudy_block\ndelete table inet supacudy_block\n';
+	s += 'table bridge supacudy_limit\ndelete table bridge supacudy_limit\n';
+
+	s += 'table inet supacudy_block {\n';
+	s += '\tset blocked { type ether_addr; ';
+	if (length(blocked))
+		s += `elements = { ${join(', ', map(blocked, (c) => c.mac))} }; `;
+	s += '}\n';
+	s += '\tchain forward {\n\t\ttype filter hook forward priority -4; policy accept;\n';
+	s += '\t\tether saddr @blocked counter drop\n\t}\n}\n';
+
+	s += 'table bridge supacudy_limit {\n';
+	s += '\tchain pre {\n\t\ttype filter hook prerouting priority -4; policy accept;\n';
+	for (let c in limited)
+		if (c.up > 0)
+			s += `\t\tether saddr ${c.mac} limit rate over ${c.up} kbytes/second drop\n`;
+	s += '\t}\n';
+	s += '\tchain post {\n\t\ttype filter hook postrouting priority -4; policy accept;\n';
+	for (let c in limited)
+		if (c.down > 0)
+			s += `\t\tether daddr ${c.mac} limit rate over ${c.down} kbytes/second drop\n`;
+	s += '\t}\n}\n';
+
+	return s;
+}
+
+if (!nft_ok('nft list table bridge supacudy_acct >/dev/null 2>&1')) {
+	writefile(SCRIPT, ACCT);
+	if (!nft_ok(`nft -f ${SCRIPT} 2>&1`)) {
+		warn('supacudy: could not create the accounting table\n');
+		exit(1);
+	}
+}
+
+writefile(SCRIPT, policy_script(clients()) + vpn_script(vpn_policy()));
+if (!nft_ok(`nft -f ${SCRIPT} 2>&1`)) {
+	warn('supacudy: could not apply the client policy\n');
+	exit(1);
+}
+
+exit(0);

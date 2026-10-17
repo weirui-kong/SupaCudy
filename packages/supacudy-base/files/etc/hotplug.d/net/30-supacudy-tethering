@@ -1,0 +1,25 @@
+#!/bin/sh
+# Copyright 2026 SupaCudy contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# A phone sharing its connection over USB shows up as a new network device
+# whose name varies (usb0, eth2, enx...); point the tethering interface at it.
+
+[ "$ACTION" = add ] || exit 0
+case "$DEVICENAME" in
+	''|*[!A-Za-z0-9_.-]*) exit 0 ;;
+esac
+[ "$(uci -q get supacudy.tethering.enabled)" = 1 ] || exit 0
+uci -q get network.tethering >/dev/null || exit 0
+
+driver="$(readlink "/sys/class/net/$DEVICENAME/device/driver" 2>/dev/null)"
+case "${driver##*/}" in
+	rndis_host|cdc_ether|cdc_ncm|ipheth) ;;
+	*) exit 0 ;;
+esac
+
+if [ "$(uci -q get network.tethering.device)" != "$DEVICENAME" ]; then
+	uci set network.tethering.device="$DEVICENAME"
+	uci commit network
+fi
+ifup tethering

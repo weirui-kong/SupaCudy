@@ -10,7 +10,17 @@ scripts/emulator.sh ssh            # 进入虚拟机的 shell
 scripts/emulator.sh console        # 看串口启动日志
 ```
 
-启动后打开 <http://127.0.0.1:8088/supacudy/>，密码 `supacudy-test`。LuCI 在 <http://127.0.0.1:8088/>。
+启动后打开 <http://127.0.0.1:8088/>（会跳到 /supacudy/），密码 `supacudy-test`。LuCI 在 <http://127.0.0.1:8088/cgi-bin/luci/>。AdGuard Home 自己的页面（在“广告过滤”里开启后）在 <http://127.0.0.1:3000/>。
+
+转发到宿主机的端口：
+
+| 宿主机 | 虚拟机 | 用途 |
+|---|---|---|
+| 127.0.0.1:8088 | 80 | SupaCudy 和 LuCI |
+| 127.0.0.1:2222 | 22 | SSH |
+| 127.0.0.1:3000 | 3000 | AdGuard Home 页面 |
+
+测试用的第二台虚拟机用 18088、12222、13000。可以用 `EMU_HTTP_PORT`、`EMU_SSH_PORT`、`EMU_ADGUARD_PORT` 修改。
 
 需要：Docker（构建镜像）和 QEMU（`brew install qemu`）。Apple Silicon 上用 HVF 硬件加速，启动约 10 秒。
 
@@ -24,7 +34,7 @@ scripts/emulator.sh console        # 看串口启动日志
 ## 网络拓扑
 
 ```
-            宿主机 127.0.0.1:8088 / :2222
+            宿主机 127.0.0.1:8088 / :2222 / :3000
                          │ （QEMU 端口转发）
                     eth1 mgmt 10.250.3.15
                          │
@@ -33,6 +43,7 @@ scripts/emulator.sh console        # 看串口启动日志
   （可上网）              │                 │      └── nas（有线，Home-NAS）
                          │                 │
                     phy0 2.4G AP "SupaCudy-Emu" ──── phone（WiFi 客户端，Pixel-Phone）
+                    phy0 2.4G AP "SupaCudy-Guest" ── visitor（访客 WiFi，Guest-Tablet，192.168.201.0/24）
                     phy1 5G  AP "SupaCudy-Emu-5G"
                          │
                     veth-uplink 10.250.10.1/30
@@ -50,10 +61,14 @@ scripts/emulator.sh console        # 看串口启动日志
 | 10.250.3.0/24 | 管理口，只用于宿主机访问 |
 | 10.250.10.0/30 | 上游热点的出口（veth） |
 | 10.250.11.0/24、10.250.12.0/24 | 上游两个热点给连上来的设备（包括中继时的路由器）分配的地址 |
+| 10.250.30.0/24 | 虚拟 WireGuard 服务器的隧道网段 |
+| 10.250.31.0/24 | 虚拟 OpenVPN 服务器的隧道网段 |
+| 10.250.42.0/24 | QEMU 模拟的 USB 网卡（扮演通过 USB 共享网络的手机），只用于测试手机共享网络 |
+| 192.168.201.0/24 | 访客网络（开启后才有，br-guest） |
 
 ## 虚拟 WiFi
 
-内核模块 `mac80211_hwsim` 虚拟出 4 块无线网卡，它们共享一个"空气"，彼此真的能扫描、关联、传数据：
+内核模块 `mac80211_hwsim` 虚拟出 5 块无线网卡，它们共享一个"空气"，彼此真的能扫描、关联、传数据：
 
 | 射频 | 归属 | 角色 |
 |---|---|---|
@@ -61,6 +76,29 @@ scripts/emulator.sh console        # 看串口启动日志
 | phy1 | 路由器 | 5GHz，信道 36，"SupaCudy-Emu-5G" |
 | phy2 | phone 命名空间 | 连接路由器 2.4GHz 的手机 |
 | phy3 | upstream 命名空间 | 两个上游热点，供中继功能扫描和连接 |
+| phy4 | visitor 命名空间 | 连接访客 WiFi "SupaCudy-Guest"（密码 `guest-pass-1`）的平板，用来验证访客隔离 |
+
+## 虚拟 VPN 服务器
+
+upstream 命名空间里跑着一个 WireGuard 服务器（10.250.10.2:51820，隧道 10.250.30.0/24），用来测试 VPN 客户端。下面的密钥**只用于模拟器**，已公开，不要用在任何真实环境。在 VPN 页面"添加配置 → 配置文件"里粘贴即可连接：
+
+```ini
+[Interface]
+PrivateKey = oGwIsQXePkq1NIVJdElbnzYDLLHMwFq5A+5Ilruz11s=
+Address = 10.250.30.2/32
+DNS = 10.250.2.3
+
+[Peer]
+PublicKey = qrYCfRcXMOaEA2xznhSAKdDiPRWAHe6VeBTg4Jqawzg=
+PresharedKey = irMdu0PKEDRBjbj/oi0azFqXoQ6PlS7h9dY2NMRHFp8=
+Endpoint = 10.250.10.2:51820
+AllowedIPs = 0.0.0.0/0
+PersistentKeepalive = 25
+```
+
+隧道通了以后，LAN 设备能 ping 通 10.250.30.1（只有经过隧道才可达）。
+
+同一个命名空间里还有一个 OpenVPN 服务器（10.250.10.2:1194，UDP，隧道 10.250.31.0/24）。证书在 `emulator/files/usr/share/supacudy-emulator/openvpn/`，同样**只用于测试**：把 `client` 配置和 `ca.crt`、`client.crt`、`client.key` 内联成一个 .ovpn 文件（`remote 10.250.10.2 1194`、`remote-cert-tls server`）即可导入，`tests/emulator/ovpn-add.uc` 就是这样做的。
 
 ## 能测和不能测的
 
@@ -68,10 +106,13 @@ scripts/emulator.sh console        # 看串口启动日志
 |---|---|
 | 有线 WAN 的 DHCP / 静态 IP、上网检测 | MT7981 / MT7976 驱动的具体行为、WPA3 兼容性 |
 | 中继：扫描、连接、断开、自动切换 | 2.5G 网口、交换芯片 |
+| USB 手机共享网络（QEMU 的 usb-net 模拟 RNDIS 手机） | iPhone 共享网络（ipheth、配对） |
+| WireGuard 客户端、Kill Switch、DNS 模式（含加密 DNS 的配置）、MAC 克隆 | 真实 VPN 服务商的连通性、加密 DNS 的实际解析（需要外网） |
 | 无线设置、访客网络 | 按键、LED |
 | 客户端列表、速度、流量、禁止上网、限速 | 硬件加速 |
 | LAN 网段、DHCP 保留、防火墙 | 闪存分区、真实的固件升级 |
-| 配置保存、服务重启、恢复出厂 | USB 手机共享 |
+| 配置保存、服务重启、重启、时区、管理密码 | |
+| 固件上传和校验（cgi-io + ACL），拒绝无效固件 | 恢复出厂（模拟器的根文件系统在内存里，`firstboot` 不起作用） |
 
 ## 构建方式
 

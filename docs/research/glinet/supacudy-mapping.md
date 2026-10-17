@@ -106,7 +106,7 @@
 |---|---|---|
 | 软件包管理 | — | 交给 LuCI；SupaCudy 只做精选应用的开关 |
 | AdGuard Home | P1 | |
-| Tailscale、ZeroTier | P2 | |
+| Tailscale、ZeroTier | P2 | 只做 Tailscale |
 | DDNS | P2 | 用 ddns-scripts 接第三方服务，不做自有云服务 |
 | 云管理平台 | — | 不做 |
 

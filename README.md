@@ -10,10 +10,9 @@ SupaCudy 不是任何厂商固件的移植或修改版。底层是原版 OpenWrt
 
 | 设备 | 构建配置 | OpenWrt 底座 |
 |---|---|---|
-| Cudy TR3000 v1（128MB 闪存） | `cudy-tr3000-v1` | 24.10.8 |
 | Cudy TR3000 v1（256MB 闪存） | `cudy-tr3000-256mb-v1` | 24.10.8 |
 
-刷机前务必先读 [docs/hardware/cudy-tr3000.md](docs/hardware/cudy-tr3000.md)，确认你的闪存版本和批次。
+只支持 256MB 闪存的版本，128MB 版不支持。刷机前务必先读 [docs/hardware/cudy-tr3000.md](docs/hardware/cudy-tr3000.md)，确认你的闪存版本和批次。
 
 ## 快速开始
 
@@ -31,10 +30,10 @@ scripts/build-packages.sh
 scripts/smoke-test.sh
 
 # 3. 用官方 ImageBuilder 打出固件，产物在 out/images/<配置名>/
-scripts/build-image.sh cudy-tr3000-v1
+scripts/build-image.sh cudy-tr3000-256mb-v1
 ```
 
-刷入后，LuCI 仍在 `http://192.168.1.1/`，SupaCudy 界面在 `http://192.168.1.1/supacudy/`。
+刷入后连接无密码的 Wi-Fi「SupaCudy」或网线，打开 `http://192.168.200.1/` 即是 SupaCudy（出厂登录 root / supacudy）；LuCI 在 `http://192.168.200.1/cgi-bin/luci/`。
 
 没有路由器时，可以在本机跑一台带虚拟 WiFi、虚拟客户端的完整模拟器（见 [docs/emulator.md](docs/emulator.md)）：
 

@@ -6,7 +6,7 @@
 |---|---|
 | SoC | MediaTek MT7981B |
 | 内存 | 512MB |
-| 闪存 | 128MB 或 256MB SPI NAND（两个版本，镜像不通用） |
+| 闪存 | 128MB 或 256MB SPI NAND（两个版本，镜像不通用）；**SupaCudy 只支持 256MB 版** |
 | 无线 | MT7976CN，2.4G + 5G |
 | 网口 | 1 × 2.5G（RTL8221B），1 × 1G |
 | USB | 1 × USB 3.0 |
@@ -17,11 +17,11 @@ OpenWrt 24.10.8 里有三个 TR3000 的 profile：
 
 | OpenWrt profile | SupaCudy 配置 | 说明 |
 |---|---|---|
-| `cudy_tr3000-v1` | `cudy-tr3000-v1` | 128MB 版，沿用 Cudy 原厂 U-Boot |
+| `cudy_tr3000-v1` | 不支持 | 128MB 版 |
 | `cudy_tr3000-256mb-v1` | `cudy-tr3000-256mb-v1` | 256MB 版，沿用 Cudy 原厂 U-Boot |
-| `cudy_tr3000-v1-ubootmod` | 暂不支持 | 128MB 版，需要先换成 OpenWrt 的 U-Boot 和分区布局 |
+| `cudy_tr3000-v1-ubootmod` | 不支持 | 128MB 版，需要先换成 OpenWrt 的 U-Boot 和分区布局 |
 
-**128MB 和 256MB 的镜像不能混刷。** 确认闪存容量的办法：在原厂固件的状态页或 OpenWrt 的 `cat /proc/mtd` 里看分区大小。
+**128MB 和 256MB 的镜像不能混刷，SupaCudy 只提供 256MB 版镜像。** 确认闪存容量的办法：在原厂固件的状态页或 OpenWrt 的 `cat /proc/mtd` 里看分区大小。
 
 ## 刷机前必看
 

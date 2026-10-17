@@ -1,0 +1,7 @@
+#!/bin/sh
+# Copyright 2026 SupaCudy contributors
+# SPDX-License-Identifier: Apache-2.0
+
+while sleep 30; do
+	ucode /usr/libexec/supacudy/rescue.uc
+done

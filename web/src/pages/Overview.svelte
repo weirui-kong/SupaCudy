@@ -8,6 +8,7 @@
   import DataRow from '../components/DataRow.svelte';
   import InfoTip from '../components/InfoTip.svelte';
   import Meter from '../components/Meter.svelte';
+  import Topology from './overview/Topology.svelte';
   import { getDeviceInfo, getSystemStatus, type DeviceInfo, type SystemStatus } from '../lib/api';
   import { errorMessage } from '../lib/errors';
   import { formatBytes, formatDuration, formatLoad } from '../lib/format';
@@ -56,6 +57,8 @@
   <Banner kind="warning">{t('overview.refresh_failed')}</Banner>
 {/if}
 
+<Topology {refreshMs} />
+
 <div class="grid">
   <Card title={t('overview.device')}>
     <dl>
@@ -97,6 +100,19 @@
     {#if status}
       <Meter label={t('overview.memory')} value={memoryUsed} max={status.memory.total} />
     {/if}
+    <dl class="storage">
+      <DataRow label={t('overview.storage')}>
+        {status?.storage
+          ? t('overview.memory_value', {
+              used: formatBytes(status.storage.total - status.storage.available, locale()),
+              total: formatBytes(status.storage.total, locale()),
+            })
+          : t('common.unavailable')}
+      </DataRow>
+    </dl>
+    {#if status?.storage}
+      <Meter label={t('overview.storage')} value={status.storage.total - status.storage.available} max={status.storage.total} />
+    {/if}
   </Card>
 </div>
 
@@ -109,6 +125,10 @@
 
   dl {
     margin: 0 0 var(--space-3);
+  }
+
+  .storage {
+    margin-top: var(--space-3);
   }
 
   @media (min-width: 1024px) {

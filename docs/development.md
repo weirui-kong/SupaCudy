@@ -23,7 +23,7 @@ brew install shellcheck               # lint 测试需要（Linux 上用 apt ins
   ```
 
   软件包签名仍按 OpenWrt 的公钥校验，换源不影响安全性。
-- **下载缓存**：ImageBuilder 下载过的软件包保存在 `out/cache/imagebuilder/`，下次直接复用。
+- **下载缓存**：ImageBuilder 下载过的软件包保存在 Docker 卷 `supacudy-imagebuilder-dl-*` 中，下次直接复用（`docker volume rm` 可清空）。
 - **跳过没变的构建**：`build-packages.sh` 和 `build-image.sh` 会对输入内容算哈希，没变就跳过 SDK / ImageBuilder。需要强制重建时加 `FORCE=1`。
 - **并行测试**：`scripts/test.sh` 在打包完成后并行运行 api、web-e2e 和模拟器三类测试，它们各用各的容器、端口和日志（api 用 18081，e2e 用 18080，模拟器用 8088 / 2222，都只监听 127.0.0.1）。
 
@@ -39,7 +39,7 @@ scripts/test.sh
 
 ```bash
 scripts/build-packages.sh               # packages/ → out/packages/*.ipk
-scripts/build-image.sh cudy-tr3000-v1   # → out/images/cudy-tr3000-v1/
+scripts/build-image.sh cudy-tr3000-256mb-v1   # → out/images/cudy-tr3000-256mb-v1/
 ```
 
 - `build-packages.sh` 在官方 SDK 镜像里只编译 `supacudy` feed 下的包。

@@ -6,11 +6,26 @@
   import Banner from '../components/Banner.svelte';
   import Icon from '../components/Icon.svelte';
   import AppearanceControls from '../components/AppearanceControls.svelte';
-  import { ApiError, login } from '../lib/api';
+  import RescueBanner from '../components/RescueBanner.svelte';
+  import { ApiError, DEFAULT_PASSWORD, login, type RescueState } from '../lib/api';
   import { errorMessage } from '../lib/errors';
   import { t } from '../lib/i18n/index.svelte';
 
-  let { onlogin, notice = null }: { onlogin: () => void; notice?: string | null } = $props();
+  let {
+    onlogin,
+    notice = null,
+    fresh = false,
+    defaultPassword = false,
+    rescue = null,
+  }: {
+    onlogin: () => void;
+    notice?: string | null;
+    /** No admin password yet: greet the owner instead of asking for one. */
+    fresh?: boolean;
+    /** Fresh, with the factory login still in place. */
+    defaultPassword?: boolean;
+    rescue?: RescueState | null;
+  } = $props();
 
   let password = $state('');
   let visible = $state(false);
@@ -22,7 +37,7 @@
     busy = true;
     error = null;
     try {
-      await login(password);
+      await login(fresh ? (defaultPassword ? DEFAULT_PASSWORD : '') : password);
       password = '';
       onlogin();
     } catch (err) {
@@ -36,42 +51,46 @@
 <main class="page">
   <div class="panel">
     <span class="brand"><Icon name="router" size={28} />{t('app.name')}</span>
-    <h1>{t('login.title')}</h1>
-    <p class="subtitle">{t('login.subtitle')}</p>
+    <h1>{fresh ? t('setup.welcome') : t('login.title')}</h1>
+    <p class="subtitle">{fresh ? (defaultPassword ? t('setup.default_hint', { password: DEFAULT_PASSWORD }) : t('setup.fresh_hint')) : t('login.subtitle')}</p>
+
+    <RescueBanner {rescue} />
 
     {#if notice && !error}
       <Banner kind="warning">{notice}</Banner>
     {/if}
 
     <form onsubmit={submit}>
-      <label for="password">{t('login.password')}</label>
-      <div class="field">
-        <input
-          id="password"
-          type={visible ? 'text' : 'password'}
-          autocomplete="current-password"
-          bind:value={password}
-          disabled={busy}
-          aria-invalid={error ? 'true' : undefined}
-          aria-describedby={error ? 'login-error' : undefined}
-        />
-        <button
-          type="button"
-          class="reveal"
-          aria-label={visible ? t('login.hide_password') : t('login.show_password')}
-          aria-pressed={visible}
-          onclick={() => (visible = !visible)}
-        >
-          <Icon name={visible ? 'eye-off' : 'eye'} />
-        </button>
-      </div>
+      {#if !fresh}
+        <label for="password">{t('login.password')}</label>
+        <div class="field">
+          <input
+            id="password"
+            type={visible ? 'text' : 'password'}
+            autocomplete="current-password"
+            bind:value={password}
+            disabled={busy}
+            aria-invalid={error ? 'true' : undefined}
+            aria-describedby={error ? 'login-error' : undefined}
+          />
+          <button
+            type="button"
+            class="reveal"
+            aria-label={visible ? t('login.hide_password') : t('login.show_password')}
+            aria-pressed={visible}
+            onclick={() => (visible = !visible)}
+          >
+            <Icon name={visible ? 'eye-off' : 'eye'} />
+          </button>
+        </div>
+      {/if}
 
       {#if error}
         <div id="login-error"><Banner kind="error">{error}</Banner></div>
       {/if}
 
       <button type="submit" class="submit" disabled={busy}>
-        {busy ? t('login.submitting') : t('login.submit')}
+        {busy ? t('login.submitting') : fresh ? t('setup.start') : t('login.submit')}
       </button>
     </form>
 

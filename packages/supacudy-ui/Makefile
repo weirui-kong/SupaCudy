@@ -6,7 +6,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=supacudy-ui
-PKG_VERSION:=0.2.0
+PKG_VERSION:=0.3.0
 PKG_RELEASE:=1
 
 PKG_LICENSE:=Apache-2.0
@@ -24,7 +24,7 @@ endef
 
 define Package/supacudy-ui/description
   Pre-built static files of the SupaCudy web interface, served by uhttpd
-  under /supacudy/.
+  under /supacudy/ and opened at the router's root address.
 endef
 
 define Build/Compile
@@ -34,6 +34,9 @@ endef
 define Package/supacudy-ui/install
 	$(INSTALL_DIR) $(1)/www/supacudy
 	$(CP) ./htdocs/. $(1)/www/supacudy/
+	$(INSTALL_DATA) ./files/www/supacudy-start.html $(1)/www/
+	$(INSTALL_DIR) $(1)/etc/uci-defaults
+	$(INSTALL_BIN) ./files/etc/uci-defaults/93-supacudy-ui $(1)/etc/uci-defaults/
 endef
 
 $(eval $(call BuildPackage,supacudy-ui))

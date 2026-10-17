@@ -1,0 +1,12 @@
+#!/bin/sh
+# Copyright 2026 SupaCudy contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# udhcpc event script for rescue.uc's probe: only notes which server
+# answered and changes no address or route.
+
+# shellcheck disable=SC2154 # serverid is set by udhcpc
+case "$1" in
+	bound|renew) echo "$serverid" > /var/run/supacudy/dhcp-server ;;
+esac
+exit 0

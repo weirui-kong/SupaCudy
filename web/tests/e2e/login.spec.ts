@@ -1,8 +1,7 @@
 // Copyright 2026 SupaCudy contributors
 // SPDX-License-Identifier: Apache-2.0
 
-import { expect, test } from '@playwright/test';
-import { expectPageQuality, login, loginAndWait, messages, projectLocale } from './helpers';
+import { PASSWORD, expect, expectPageQuality, login, loginAndWait, messages, projectLocale, test } from './helpers';
 
 test.describe('login', () => {
   test('is shown in the browser language and passes the quality checks', async ({ page }, testInfo) => {
@@ -49,7 +48,7 @@ test.describe('login', () => {
 
     const session = await page.evaluate(() => sessionStorage.getItem('supacudy.session'));
     for (const url of urls) {
-      expect(url).not.toContain('supacudy-test');
+      expect(url).not.toContain(PASSWORD);
       expect(url).not.toContain(session!);
     }
   });

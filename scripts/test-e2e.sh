@@ -2,23 +2,17 @@
 # Copyright 2026 SupaCudy contributors
 # SPDX-License-Identifier: Apache-2.0
 #
-# Start the smoke-test container with the built packages and run the
-# Playwright tests against it.
+# Run the Playwright UI tests against the built front-end and the mock
+# router. Expects packages/supacudy-ui/htdocs to be built (build-packages.sh
+# or `npm run build` in web/).
 #
 #   scripts/test-e2e.sh [playwright args...]
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-# A separate port so a container started by hand on 8080 is left alone.
-PORT="${E2E_PORT:-18080}"
-
-# Its own container, so it can run in parallel with the api tests.
-export SMOKE_NAME=supacudy-e2e
-trap 'docker rm -f "$SMOKE_NAME" >/dev/null 2>&1 || true' EXIT
-
-PORT="$PORT" "$ROOT/scripts/smoke-test.sh" --keep
 
 cd "$ROOT/web"
+[ -f "$ROOT/packages/supacudy-ui/htdocs/index.html" ] || npm run build
 npx playwright install chromium ${CI:+--with-deps} >/dev/null
-E2E_BASE_URL="http://localhost:$PORT/supacudy/" npx playwright test "$@"
+npx playwright test "$@"

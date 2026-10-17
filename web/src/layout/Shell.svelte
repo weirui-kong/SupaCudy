@@ -5,8 +5,12 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import Icon from '../components/Icon.svelte';
+  import LuciDialog from '../components/LuciDialog.svelte';
+  import Notices from '../components/Notices.svelte';
+  import RescueBanner from '../components/RescueBanner.svelte';
+  import { getRescue, type RescueState } from '../lib/api';
   import { t } from '../lib/i18n/index.svelte';
-  import { ROUTES, href, type Route } from '../lib/router.svelte';
+  import { GROUPS, MORE, ROUTES, entryFor, href, type Route } from '../lib/router.svelte';
 
   let {
     route,
@@ -14,6 +18,21 @@
     onlogout,
     children,
   }: { route: Route; title: string; onlogout: () => void; children: Snippet } = $props();
+
+  const primary = ROUTES.filter((entry) => entry.primary);
+  // "More" stays highlighted while the user is on a page reached through it.
+  const bottomActive = $derived(entryFor(route).primary ? route : MORE.route);
+
+  let rescue = $state<RescueState | null>(null);
+  let luci = $state(false);
+
+  // The watcher checks every 30 s, so does the banner.
+  $effect(() => {
+    const load = () => getRescue().then((r) => (rescue = r)).catch(() => {});
+    load();
+    const timer = setInterval(load, 30_000);
+    return () => clearInterval(timer);
+  });
 </script>
 
 <a class="skip" href="#main">{t('app.skip_to_content')}</a>
@@ -25,17 +44,26 @@
 
   <nav class="sidebar" aria-label={t('nav.main')}>
     <span class="brand"><Icon name="router" size={24} />{t('app.name')}</span>
-    <ul>
-      {#each ROUTES as entry (entry.route)}
-        <li>
-          <a href={href(entry.route)} aria-current={entry.route === route ? 'page' : undefined}>
-            <Icon name={entry.icon} />
-            <span>{t(entry.label)}</span>
-          </a>
-        </li>
-      {/each}
-    </ul>
-    <button type="button" class="logout" onclick={onlogout}>
+    {#each GROUPS as { group, label } (group)}
+      <div class="group">
+        {#if label}<span class="group-label">{t(label)}</span>{/if}
+        <ul>
+          {#each ROUTES.filter((entry) => entry.group === group) as entry (entry.route)}
+            <li>
+              <a href={href(entry.route)} aria-current={entry.route === route ? 'page' : undefined}>
+                <Icon name={entry.icon} />
+                <span>{t(entry.label)}</span>
+              </a>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    {/each}
+    <button type="button" class="side-action luci" onclick={() => (luci = true)}>
+      <Icon name="link" />
+      <span>{t('nav.luci')}</span>
+    </button>
+    <button type="button" class="side-action" onclick={onlogout}>
       <Icon name="logout" />
       <span>{t('nav.logout')}</span>
     </button>
@@ -43,18 +71,22 @@
 
   <main id="main" tabindex="-1">
     <h1>{title}</h1>
+    <RescueBanner {rescue} />
     {@render children()}
   </main>
 
   <nav class="bottom-nav" aria-label={t('nav.main')}>
-    {#each ROUTES as entry (entry.route)}
-      <a href={href(entry.route)} aria-current={entry.route === route ? 'page' : undefined}>
+    {#each [...primary, MORE] as entry (entry.route)}
+      <a href={href(entry.route)} aria-current={entry.route === bottomActive ? 'page' : undefined}>
         <Icon name={entry.icon} size={22} />
         <span>{t(entry.label)}</span>
       </a>
     {/each}
   </nav>
 </div>
+
+<Notices />
+<LuciDialog bind:open={luci} />
 
 <style>
   .skip {
@@ -89,8 +121,6 @@
     z-index: 5;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
     height: 56px;
     padding: 0 var(--space-4);
     background: var(--color-nav-bg);
@@ -103,7 +133,7 @@
 
   main {
     padding: var(--space-4);
-    padding-bottom: calc(var(--bottom-nav-height) + var(--space-5) + env(safe-area-inset-bottom));
+    padding-bottom: calc(var(--bottom-nav-height) + var(--space-7) + env(safe-area-inset-bottom));
     max-width: var(--content-max-width);
     outline: none;
   }
@@ -159,9 +189,10 @@
       position: sticky;
       top: 0;
       height: 100vh;
+      overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: var(--space-5);
+      gap: var(--space-4);
       padding: var(--space-5) var(--space-3);
       background: var(--color-nav-bg);
       border-right: 1px solid var(--color-border);
@@ -170,6 +201,21 @@
     .sidebar .brand {
       padding: 0 var(--space-3);
       font-size: var(--font-size-lg);
+    }
+
+    .group {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-1);
+    }
+
+    .group-label {
+      padding: 0 var(--space-3);
+      font-size: var(--font-size-xs);
+      font-weight: 600;
+      color: var(--color-text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
     }
 
     .sidebar ul {
@@ -182,7 +228,7 @@
     }
 
     .sidebar a,
-    .logout {
+    .side-action {
       display: flex;
       align-items: center;
       gap: var(--space-3);
@@ -196,7 +242,7 @@
     }
 
     .sidebar a:hover,
-    .logout:hover {
+    .side-action:hover {
       background: var(--color-surface-muted);
     }
 
@@ -206,12 +252,15 @@
       font-weight: 600;
     }
 
-    .logout {
-      margin-top: auto;
+    .side-action {
       border: 0;
       background: none;
       color: var(--color-text-muted);
       cursor: pointer;
+    }
+
+    .luci {
+      margin-top: auto;
     }
 
     main {

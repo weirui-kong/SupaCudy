@@ -1,0 +1,9 @@
+#!/bin/sh
+# Copyright 2026 SupaCudy contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# AdGuard Home is the default DNS: set it up on first boot, and on upgrades
+# from versions without it. A router with an adguard section keeps it.
+
+ucode -e "import { apply_defaults } from 'supacudy.adguard'; apply_defaults();"
+exit 0

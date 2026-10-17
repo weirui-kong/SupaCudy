@@ -3,8 +3,9 @@
 
 import { defineConfig, devices } from '@playwright/test';
 
-// Runs against the smoke-test container, which scripts/test-e2e.sh starts.
-const baseURL = process.env.E2E_BASE_URL ?? 'http://localhost:18080/supacudy/';
+// The built UI is served by `vite preview`; every test answers /ubus with
+// the in-memory mock router (tests/e2e/mock/router.ts).
+const PORT = Number(process.env.E2E_PORT ?? 4173);
 
 const viewports = {
   desktop: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } },
@@ -18,7 +19,12 @@ export default defineConfig({
   fullyParallel: true,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
-  use: { baseURL, trace: 'retain-on-failure' },
+  use: { baseURL: `http://127.0.0.1:${PORT}/`, trace: 'retain-on-failure' },
+  webServer: {
+    command: `npx vite preview --host 127.0.0.1 --port ${PORT} --strictPort`,
+    url: `http://127.0.0.1:${PORT}/`,
+    reuseExistingServer: !process.env.CI,
+  },
   projects: Object.entries(viewports).flatMap(([viewportName, device]) =>
     themes.flatMap((colorScheme) =>
       locales.map((locale) => ({

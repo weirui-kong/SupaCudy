@@ -1,0 +1,23 @@
+#!/bin/sh /etc/rc.common
+# Copyright 2026 SupaCudy contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# After the firewall (19), so fw4 does not flush the tables on its start.
+
+# shellcheck disable=SC2034 # read by rc.common
+START=21
+
+start() {
+	ucode /usr/libexec/supacudy/policy.uc
+}
+
+reload() {
+	ucode /usr/libexec/supacudy/policy.uc
+}
+
+stop() {
+	nft delete table inet supacudy_block 2>/dev/null
+	nft delete table bridge supacudy_limit 2>/dev/null
+	nft delete table inet supacudy_vpnroute 2>/dev/null
+	true
+}

@@ -35,3 +35,18 @@ export function formatDuration(totalSeconds: number, t: Translate): string {
 export function formatLoad(value: number, locale: Locale): string {
   return new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
 }
+
+// The router's zone table uses spaces where IANA names use underscores.
+export function ianaZone(zonename: string): string {
+  return zonename.replace(/ /g, '_');
+}
+
+export function formatClock(epochMs: number, timeZone: string, locale: string): string {
+  const options: Intl.DateTimeFormatOptions = { dateStyle: 'medium', timeStyle: 'medium' };
+  try {
+    return new Intl.DateTimeFormat(locale, { ...options, timeZone }).format(epochMs);
+  } catch {
+    // A zone the browser does not know: show UTC and say so.
+    return `${new Intl.DateTimeFormat(locale, { ...options, timeZone: 'UTC' }).format(epochMs)} UTC`;
+  }
+}

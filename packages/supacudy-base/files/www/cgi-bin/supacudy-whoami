@@ -1,0 +1,18 @@
+#!/bin/sh
+# Copyright 2026 SupaCudy contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Tells the web UI which address it is talking from, so it can find "this
+# device" among the clients (for MAC cloning). rpcd never sees the caller's IP.
+
+addr="$REMOTE_ADDR"
+case "$addr" in
+	*[!0-9a-fA-F:.]*|'') addr='' ;;
+esac
+
+printf 'Content-Type: application/json\r\nCache-Control: no-store\r\n\r\n'
+if [ -n "$addr" ]; then
+	printf '{"ip":"%s"}\n' "$addr"
+else
+	printf '{"ip":null}\n'
+fi

@@ -38,7 +38,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        profile: [cudy-tr3000-v1, cudy-tr3000-256mb-v1]
+        profile: [cudy-tr3000-256mb-v1]
     steps:
       - uses: actions/checkout@v4
 

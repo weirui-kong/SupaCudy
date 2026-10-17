@@ -1,8 +1,8 @@
 // Copyright 2026 SupaCudy contributors
 // SPDX-License-Identifier: Apache-2.0
 
-import { expect, test, type Page } from '@playwright/test';
-import { expectPageQuality, loginAndWait, messages, otherMessages, projectLocale } from './helpers';
+import type { Page } from '@playwright/test';
+import { expect, expectPageQuality, loginAndWait, messages, otherMessages, projectLocale, test } from './helpers';
 
 // Must match --color-bg in src/styles/tokens.css.
 const BACKGROUND = { light: 'rgb(243, 244, 246)', dark: 'rgb(15, 17, 21)' };

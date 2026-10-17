@@ -36,12 +36,20 @@
     if (open) place();
   }
 
+  // Follow the trigger while the page scrolls; close once it is off screen.
+  function follow() {
+    if (!open) return;
+    const anchor = trigger.getBoundingClientRect();
+    if (anchor.bottom < 0 || anchor.top > window.innerHeight) open = false;
+    else place();
+  }
+
   function onkeydown(event: KeyboardEvent) {
     if (event.key === 'Escape') open = false;
   }
 </script>
 
-<svelte:window onscroll={() => (open = false)} onresize={() => (open = false)} />
+<svelte:window onscroll={follow} onresize={() => (open = false)} />
 
 <span class="wrap">
   <button

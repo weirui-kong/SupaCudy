@@ -35,6 +35,12 @@
 - **Confirm dangerous actions.** Factory reset, firmware upgrade and deleting configuration need a confirmation that states the consequences.
 - **No fake data.** Values that cannot be read show "—" or an explicit error state, never placeholder numbers.
 
+## Accounts
+
+- **One password for everything with a login** (Unified Password): SSH, the web UI, AdGuard Home's own page and any login added later all use user `root` with the admin password. Wi-Fi and VPN credentials are separate.
+- Factory login: user `root`, password `supacudy`. The login page shows it only until setup is done, and the setup wizard requires a new password (the factory one is refused).
+- Changing the admin password in SupaCudy updates every login at once. A change made outside SupaCudy (`passwd`, LuCI) is detected, and the UI asks for the password once to bring the others in line.
+
 ## Glossary
 
 | English | 中文 | Meaning |
@@ -43,4 +49,4 @@
 | Tethering | 手机共享网络 | Using a phone's connection over USB |
 | Ethernet WAN | 有线 WAN | |
 | Clients | 客户端 | Devices connected to the router |
-| Admin password | 管理密码 | Password of the root user |
+| Admin password | 管理密码 | Password of the root user, shared by every login (SSH, web UI, AdGuard Home) |

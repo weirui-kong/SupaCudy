@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from 'vitest';
-import { formatBytes, formatDuration, formatLoad } from '../../src/lib/format';
+import { formatBytes, formatClock, formatDuration, formatLoad, ianaZone } from '../../src/lib/format';
 import en from '../../src/lib/i18n/en';
 import zhCN from '../../src/lib/i18n/zh-CN';
 import { lookup, type Key } from '../../src/lib/i18n/index.svelte';
@@ -64,5 +64,25 @@ describe('formatLoad', () => {
     expect(formatLoad(0, 'en')).toBe('0.00');
     expect(formatLoad(1.5, 'en')).toBe('1.50');
     expect(formatLoad(0.126, 'zh-CN')).toBe('0.13');
+  });
+});
+
+describe('ianaZone', () => {
+  it('turns router zone names into IANA names', () => {
+    expect(ianaZone('America/New York')).toBe('America/New_York');
+    expect(ianaZone('UTC')).toBe('UTC');
+  });
+});
+
+describe('formatClock', () => {
+  const instant = Date.UTC(2026, 9, 17, 4, 5, 6);
+
+  it('shows the time in the router zone', () => {
+    expect(formatClock(instant, 'Asia/Shanghai', 'en')).toContain('12:05:06');
+    expect(formatClock(instant, 'UTC', 'en')).toContain('4:05:06');
+  });
+
+  it('falls back to UTC, labelled, for a zone the browser does not know', () => {
+    expect(formatClock(instant, 'Mars/Base', 'en')).toMatch(/4:05:06.*UTC$/);
   });
 });

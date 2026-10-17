@@ -1,0 +1,44 @@
+#!/bin/sh
+# Copyright 2026 SupaCudy contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# SupaCudy's factory defaults: LAN 192.168.200.1 (192.168.1.x collides with
+# many modems), an open "SupaCudy" Wi-Fi so a phone can reach the setup
+# wizard without a cable, and the CN regulatory domain for its channels and
+# power. Applied only to OpenWrt's own fresh defaults, so
+# an upgrade that keeps settings changes nothing.
+
+# One default login for SSH, the web UI and AdGuard Home: root / supacudy.
+# The root shadow entry it produced is recorded so the UI can tell while
+# the default is still in use; the setup wizard has it changed.
+if grep -q '^root::' /etc/shadow; then
+	printf 'supacudy\nsupacudy\n' | passwd root >/dev/null 2>&1
+	mkdir -p /etc/supacudy
+	chmod 700 /etc/supacudy
+	grep '^root:' /etc/shadow | cut -d: -f2 > /etc/supacudy/default-password
+	chmod 600 /etc/supacudy/default-password
+fi
+
+[ "$(uci -q get supacudy.main.setup_done)" = 1 ] && exit 0
+
+fresh_wifi=1
+for iface in $(uci -q show wireless | sed -n "s/^wireless\.\([^.=]*\)=wifi-iface$/\1/p"); do
+	[ "$(uci -q get "wireless.$iface.ssid")" = OpenWrt ] || fresh_wifi=0
+done
+[ "$(uci -q get network.lan.ipaddr)" = 192.168.1.1 ] || exit 0
+[ "$fresh_wifi" = 1 ] || exit 0
+
+uci set network.lan.ipaddr='192.168.200.1'
+for radio in $(uci -q show wireless | sed -n "s/^wireless\.\([^.=]*\)=wifi-device$/\1/p"); do
+	uci -q delete "wireless.$radio.disabled"
+	uci set "wireless.$radio.country=CN"
+done
+for iface in $(uci -q show wireless | sed -n "s/^wireless\.\([^.=]*\)=wifi-iface$/\1/p"); do
+	uci set "wireless.$iface.ssid=SupaCudy"
+	uci set "wireless.$iface.encryption=none"
+	uci -q delete "wireless.$iface.key"
+done
+uci commit network
+uci commit wireless
+
+exit 0

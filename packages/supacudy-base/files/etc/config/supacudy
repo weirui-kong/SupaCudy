@@ -1,0 +1,2 @@
+config supacudy 'main'
+	option setup_done '0'

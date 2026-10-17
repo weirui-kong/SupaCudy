@@ -10,4 +10,16 @@ if [ -z "$(uci -q get uhttpd.main.ubus_prefix)" ]; then
 	uci commit uhttpd
 fi
 
+# https-dns-proxy switches all DNS to DoH as soon as it runs; it stays off
+# until encrypted DNS is chosen in the UI.
+if [ -x /etc/init.d/https-dns-proxy ] && [ "$(uci -q get supacudy.dns.mode)" != encrypted ]; then
+	/etc/init.d/https-dns-proxy disable
+fi
+
+# The tailscale package starts its daemon on install; it stays off until
+# remote access is turned on in the UI.
+if [ -x /etc/init.d/tailscale ] && [ "$(uci -q get supacudy.remote.tailscale)" != 1 ]; then
+	/etc/init.d/tailscale disable
+fi
+
 exit 0

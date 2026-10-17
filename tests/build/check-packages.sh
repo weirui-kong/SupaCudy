@@ -59,23 +59,37 @@ check "base: ships /etc/supacudy_version" has_file supacudy-base etc/supacudy_ve
 check "base: version file matches package version" \
 	test "$(cat "$WORK/supacudy-base/data/etc/supacudy_version")" = "$(field supacudy-base Version)"
 check "base: uci-defaults script is executable" is_exec supacudy-base etc/uci-defaults/90-supacudy
+check "base: first-boot defaults script is executable" is_exec supacudy-base etc/uci-defaults/91-supacudy-defaults
+for f in etc/init.d/supacudy-rescue usr/libexec/supacudy/rescue-watch usr/libexec/supacudy/dhcp-probe; do
+	check "base: $f is executable" is_exec supacudy-base "$f"
+done
+check "base: whoami CGI is executable" is_exec supacudy-base www/cgi-bin/supacudy-whoami
+check "base: ships the tethering hotplug script" has_file supacudy-base etc/hotplug.d/net/30-supacudy-tethering
+for dep in kmod-usb-net-rndis kmod-usb-net-cdc-ether kmod-usb-net-cdc-ncm kmod-usb-net-ipheth usbmuxd; do
+	check "base: depends on $dep" depends_on supacudy-base "$dep"
+done
 
 check "rpcd: depends on supacudy-base"   depends_on supacudy-rpcd supacudy-base
 check "rpcd: depends on rpcd-mod-ucode"  depends_on supacudy-rpcd rpcd-mod-ucode
 check "rpcd: ships the ucode plugin"     has_file supacudy-rpcd usr/share/rpcd/ucode/supacudy.uc
+for module in "$ROOT"/packages/supacudy-rpcd/files/usr/share/ucode/supacudy/*.uc; do
+	check "rpcd: ships the $(basename "$module" .uc) module" \
+		has_file supacudy-rpcd "usr/share/ucode/supacudy/$(basename "$module")"
+done
 check "rpcd: ships the ACL"              has_file supacudy-rpcd usr/share/rpcd/acl.d/supacudy.json
 check "rpcd: has a postinst that restarts rpcd" \
 	grep -q 'rpcd restart' "$WORK/supacudy-rpcd/control/postinst-pkg"
 
-acl_check="$(python3 -I - "$WORK/supacudy-rpcd/data/usr/share/rpcd/ucode/supacudy.uc" \
-	"$WORK/supacudy-rpcd/data/usr/share/rpcd/acl.d/supacudy.json" <<'EOF'
+acl_check="$(python3 -I - "$WORK/supacudy-rpcd/data/usr/share/rpcd/acl.d/supacudy.json" \
+	"$WORK/supacudy-rpcd/data/usr/share/rpcd/ucode/supacudy.uc" \
+	"$WORK"/supacudy-rpcd/data/usr/share/ucode/supacudy/*.uc <<'EOF'
 import json, re, sys
-plugin = open(sys.argv[1]).read()
+plugin = "".join(open(p).read() for p in sys.argv[2:])
 try:
-    acl = json.load(open(sys.argv[2]))
+    acl = json.load(open(sys.argv[1]))
 except ValueError as e:
     print("invalid JSON: %s" % e); sys.exit(0)
-methods = set(re.findall(r'(\w+):\s*\{\s*(?:args:\s*\{[^}]*\}\s*,\s*)?call:', plugin))
+methods = set(re.findall(r'(\w+):\s*\{\s*(?:args:\s*(?:\{[^}]*\}|\w+)\s*,\s*)?call:', plugin))
 granted = set()
 for group in acl.values():
     for kind in ("read", "write"):
@@ -89,10 +103,34 @@ elif missing or extra:
 EOF
 )"
 check "rpcd: ACL is valid and matches plugin methods${acl_check:+ ($acl_check)}" test -z "$acl_check"
+check "rpcd: depends on luci-base (zoneinfo, cgi-io)" depends_on supacudy-rpcd luci-base
+check "rpcd: depends on https-dns-proxy" depends_on supacudy-rpcd https-dns-proxy
+check "rpcd: depends on wireguard-tools" depends_on supacudy-rpcd wireguard-tools
+check "rpcd: depends on openvpn-mbedtls" depends_on supacudy-rpcd openvpn-mbedtls
+check "rpcd: depends on ddns-scripts" depends_on supacudy-rpcd ddns-scripts
+check "rpcd: depends on adguardhome" depends_on supacudy-rpcd adguardhome
+check "rpcd: depends on curl for the AdGuard Home API" depends_on supacudy-rpcd curl
+check "rpcd: depends on tailscale" depends_on supacudy-rpcd tailscale
+check "rpcd: AdGuard Home first-boot script is executable" is_exec supacudy-rpcd etc/uci-defaults/92-supacudy-adguard
+check "rpcd: before login only setup_status is readable" \
+	python3 -I -c 'import json, sys
+anon = json.load(open(sys.argv[1])).get("unauthenticated", {})
+sys.exit(anon.get("read") != {"ubus": {"supacudy": ["setup_status"]}} or "write" in anon)' \
+	"$WORK/supacudy-rpcd/data/usr/share/rpcd/acl.d/supacudy.json"
+check "rpcd: file ACL only allows writing the firmware upload" \
+	python3 -I -c 'import json, sys
+acl = json.load(open(sys.argv[1]))["supacudy"]
+files = {p: m for kind in ("read", "write") for p, m in acl.get(kind, {}).get("file", {}).items()}
+sys.exit(files != {"/tmp/firmware.bin": ["write"]} or "file" in acl.get("read", {}))' \
+	"$WORK/supacudy-rpcd/data/usr/share/rpcd/acl.d/supacudy.json"
 
 check "ui: depends on supacudy-rpcd"   depends_on supacudy-ui supacudy-rpcd
 check "ui: depends on uhttpd-mod-ubus" depends_on supacudy-ui uhttpd-mod-ubus
 check "ui: ships /www/supacudy/index.html" has_file supacudy-ui www/supacudy/index.html
+check "ui: ships the start page that opens SupaCudy" \
+	bash -c "grep -q 'URL=supacudy/' '$WORK/supacudy-ui/data/www/supacudy-start.html'"
+check "ui: start page script is executable" is_exec supacudy-ui etc/uci-defaults/93-supacudy-ui
+check "ui: does not replace LuCI's /www/index.html" bash -c "[ ! -e '$WORK/supacudy-ui/data/www/index.html' ]"
 ui_root="$WORK/supacudy-ui/data/www/supacudy"
 check "ui: ships a JavaScript bundle" bash -c "ls '$ui_root'/assets/*.js >/dev/null 2>&1"
 check "ui: ships a stylesheet" bash -c "ls '$ui_root'/assets/*.css >/dev/null 2>&1"

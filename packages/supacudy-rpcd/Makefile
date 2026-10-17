@@ -6,7 +6,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=supacudy-rpcd
-PKG_VERSION:=0.2.0
+PKG_VERSION:=0.3.0
 PKG_RELEASE:=1
 
 PKG_LICENSE:=Apache-2.0
@@ -19,7 +19,13 @@ define Package/supacudy-rpcd
   CATEGORY:=SupaCudy
   TITLE:=SupaCudy rpcd API plugin
   PKGARCH:=all
-  DEPENDS:=+supacudy-base +rpcd +rpcd-mod-ucode
+  # luci-base: time zone table (luci.zoneinfo) and cgi-io for firmware uploads.
+  # https-dns-proxy: encrypted DNS (about 400 KB with libcurl); off by default.
+  # wireguard-tools: VPN client and server (about 200 KB, pulls in kmod-wireguard).
+  # openvpn-mbedtls: OpenVPN client (about 650 KB, pulls in kmod-tun).
+  # ddns-scripts*: dynamic DNS with common providers (about 250 KB).
+  # adguardhome: the default DNS with ad blocking (about 10 MB).
+  DEPENDS:=+supacudy-base +rpcd +rpcd-mod-ucode +ucode-mod-fs +ucode-mod-uci +ucode-mod-ubus +ucode-mod-rtnl +ucode-mod-nl80211 +nftables +luci-base +https-dns-proxy +wireguard-tools +openvpn-mbedtls +ddns-scripts +ddns-scripts-services +ddns-scripts-cloudflare +ddns-scripts-dnspod-v3 +adguardhome +curl +tailscale
 endef
 
 define Package/supacudy-rpcd/description
@@ -33,6 +39,10 @@ endef
 define Package/supacudy-rpcd/install
 	$(INSTALL_DIR) $(1)/usr/share/rpcd/ucode
 	$(INSTALL_DATA) ./files/usr/share/rpcd/ucode/supacudy.uc $(1)/usr/share/rpcd/ucode/
+	$(INSTALL_DIR) $(1)/usr/share/ucode/supacudy
+	$(INSTALL_DATA) ./files/usr/share/ucode/supacudy/*.uc $(1)/usr/share/ucode/supacudy/
+	$(INSTALL_DIR) $(1)/etc/uci-defaults
+	$(INSTALL_BIN) ./files/etc/uci-defaults/92-supacudy-adguard $(1)/etc/uci-defaults/
 	$(INSTALL_DIR) $(1)/usr/share/rpcd/acl.d
 	$(INSTALL_DATA) ./files/usr/share/rpcd/acl.d/supacudy.json $(1)/usr/share/rpcd/acl.d/
 endef
