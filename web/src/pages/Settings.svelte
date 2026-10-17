@@ -8,6 +8,7 @@
   import Icon from '../components/Icon.svelte';
   import PasswordCard from './settings/PasswordCard.svelte';
   import TimeCard from './settings/TimeCard.svelte';
+  import GuardCard from './settings/GuardCard.svelte';
   import WanAccessCard from './settings/WanAccessCard.svelte';
   import { t } from '../lib/i18n/index.svelte';
 
@@ -22,6 +23,7 @@
   <TimeCard />
   <PasswordCard />
   <WanAccessCard />
+  <GuardCard />
 
   <Card title={t('settings.session')}>
     <div class="session">

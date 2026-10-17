@@ -3,7 +3,6 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const ANON = '00000000000000000000000000000000';
 const SID = 'a'.repeat(32);
 
 type Reply = { result?: unknown[]; error?: { code: number; message?: string } } | Error | 'not-json';
@@ -34,18 +33,24 @@ async function load(session: string | null = null) {
   return import('../../src/lib/api');
 }
 
+// A reply from /cgi-bin/supacudy-login.
+function loginReply(status: number, body: unknown = {}) {
+  return { status, ok: status >= 200 && status < 300, json: async () => body } as Response;
+}
+
 describe('login', () => {
   beforeEach(() => vi.resetModules());
 
-  it('logs in with the anonymous session and stores the new one', async () => {
+  it('logs in through the login CGI and stores the new session', async () => {
     const api = await load();
-    const fetchMock = stubFetch({ result: [0, { ubus_rpc_session: SID }] });
+    const fetchMock = vi.fn(async () => loginReply(200, { ubus_rpc_session: SID, expires: 300 }));
+    vi.stubGlobal('fetch', fetchMock);
 
     await api.login('secret');
 
-    const { url, body } = sentBody(fetchMock);
-    expect(url).toBe('/ubus');
-    expect(body.params).toEqual([ANON, 'session', 'login', { username: 'root', password: 'secret' }]);
+    const { url, body } = sentBody(fetchMock as unknown as ReturnType<typeof stubFetch>);
+    expect(url).toBe('/cgi-bin/supacudy-login');
+    expect(body).toEqual({ password: 'secret' });
     expect(api.hasSession()).toBe(true);
     expect(sessionStorage.getItem('supacudy.session')).toBe(SID);
     expect(localStorage.length).toBe(0);
@@ -53,27 +58,44 @@ describe('login', () => {
 
   it('never puts the password in the URL', async () => {
     const api = await load();
-    const fetchMock = stubFetch({ result: [0, { ubus_rpc_session: SID }] });
+    const fetchMock = vi.fn(async () => loginReply(200, { ubus_rpc_session: SID }));
+    vi.stubGlobal('fetch', fetchMock);
     await api.login('p@ss word');
-    expect(sentBody(fetchMock).url).not.toContain('p@ss');
+    expect(sentBody(fetchMock as unknown as ReturnType<typeof stubFetch>).url).not.toContain('p@ss');
   });
 
   it('rejects a wrong password without firing the expiry listener', async () => {
     const api = await load();
     const expired = vi.fn();
     api.onSessionExpired(expired);
-    stubFetch({ result: [6] });
+    vi.stubGlobal('fetch', vi.fn(async () => loginReply(403, { error: 'wrong_password' })));
 
     await expect(api.login('wrong')).rejects.toMatchObject({ code: 'denied' });
     expect(api.hasSession()).toBe(false);
     expect(expired).not.toHaveBeenCalled();
   });
 
-  it('treats a login reply without a session id as an error', async () => {
+  it.each([
+    ['a reply without a session id', loginReply(200, {})],
+    ['a server error', loginReply(500, {})],
+    ['a reply that is not JSON', { status: 200, ok: true, json: async () => { throw new SyntaxError('x'); } } as unknown as Response],
+  ])('treats %s as an error', async (_name, reply) => {
     const api = await load();
-    stubFetch({ result: [0, {}] });
+    vi.stubGlobal('fetch', vi.fn(async () => reply));
     await expect(api.login('x')).rejects.toMatchObject({ code: 'unknown' });
     expect(api.hasSession()).toBe(false);
+  });
+
+  it('reports a malformed request as invalid', async () => {
+    const api = await load();
+    vi.stubGlobal('fetch', vi.fn(async () => loginReply(400, { error: 'invalid' })));
+    await expect(api.login('x')).rejects.toMatchObject({ code: 'invalid' });
+  });
+
+  it('reports an unreachable router, which is also what a banned address sees', async () => {
+    const api = await load();
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch'); }));
+    await expect(api.login('secret')).rejects.toMatchObject({ code: 'network' });
   });
 });
 
@@ -204,12 +226,17 @@ describe('verifyPassword', () => {
   it('logs in once with a throwaway session and destroys it, keeping the current one', async () => {
     const api = await load(SID);
     const temp = 'b'.repeat(32);
-    const fetchMock = stubFetch({ result: [0, { ubus_rpc_session: temp }] }, { result: [0] });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(loginReply(200, { ubus_rpc_session: temp }))
+      .mockResolvedValueOnce({ json: async () => ({ result: [0] }) } as Response);
+    vi.stubGlobal('fetch', fetchMock);
 
     expect(await api.verifyPassword('secret')).toBe(true);
 
-    expect(sentBody(fetchMock, 0).body.params).toEqual([ANON, 'session', 'login', { username: 'root', password: 'secret' }]);
-    expect(sentBody(fetchMock, 1).body.params).toEqual([temp, 'session', 'destroy', {}]);
+    const calls = fetchMock.mock.calls as unknown as [string, RequestInit][];
+    expect(calls[0][0]).toBe('/cgi-bin/supacudy-login');
+    expect(JSON.parse(calls[0][1].body as string)).toEqual({ password: 'secret' });
+    expect(JSON.parse(calls[1][1].body as string).params).toEqual([temp, 'session', 'destroy', {}]);
     expect(sessionStorage.getItem('supacudy.session')).toBe(SID);
   });
 
@@ -217,7 +244,7 @@ describe('verifyPassword', () => {
     const api = await load(SID);
     const expired = vi.fn();
     api.onSessionExpired(expired);
-    stubFetch({ result: [6] });
+    vi.stubGlobal('fetch', vi.fn(async () => loginReply(403, { error: 'wrong_password' })));
 
     expect(await api.verifyPassword('wrong')).toBe(false);
     expect(expired).not.toHaveBeenCalled();
@@ -604,5 +631,16 @@ describe('ad blocking helpers', () => {
     const fetchMock = stubFetch({ result: [0, { applied: true }] });
     await api.setAdguardWeb(false);
     expect(sentBody(fetchMock).body.params).toEqual([SID, 'supacudy', 'adguard_web_set', { enabled: false, password: '', hash: '' }]);
+  });
+});
+
+describe('guardFieldError', () => {
+  it.each([
+    ['attempts', '3', null], ['attempts', '0', 'range'], ['attempts', '21', 'range'], ['attempts', '2.5', 'range'],
+    ['window', '1440', null], ['window', '1441', 'range'], ['ban', '10080', null], ['ban', '', 'range'], ['ban', ' 120 ', null],
+    ['ban', '-5', 'range'], ['window', '1e3', 'range'],
+  ] as const)('%s = "%s" -> %s', async (field, value, expected) => {
+    const api = await import('../../src/lib/api');
+    expect(api.guardFieldError(field, value)).toBe(expected);
   });
 });

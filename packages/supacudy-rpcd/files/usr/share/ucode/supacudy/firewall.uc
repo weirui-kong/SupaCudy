@@ -8,6 +8,7 @@
 
 'use strict';
 
+import { popen } from 'fs';
 import { INVALID, NOT_FOUND, uci, run_later, fail, subnet, parse_netmask, ipv4_to_int } from 'supacudy.util';
 
 const PROTOS = [ 'tcp', 'udp', 'tcp udp' ];
@@ -295,7 +296,81 @@ function wan_access_set(req) {
 	return { applied: true };
 }
 
+// Login protection, run by /usr/libexec/supacudy/login-guard.uc in
+// supacudy-base. Its nft sets hold the banned addresses with their timeouts.
+const GUARD_TABLE = 'supacudy_guard';
+const GUARD_LIMITS = { attempts: [ 1, 20, 3 ], window: [ 1, 1440, 30 ], ban: [ 1, 10080, 120 ] };
+
+function guard_value(cur, name) {
+	const range = GUARD_LIMITS[name];
+	const v = +(cur.get('supacudy', 'guard', name) ?? range[2]);
+	return v >= range[0] && v <= range[1] && v == int(v) ? v : range[2];
+}
+
+function banned() {
+	const out = [];
+	for (let set in [ 'ban4', 'ban6' ]) {
+		const p = popen(`nft -j list set inet ${GUARD_TABLE} ${set} 2>/dev/null`);
+		let reply = null;
+		try {
+			reply = json(p?.read('all') || 'null');
+		} catch {
+			reply = null;
+		}
+		p?.close();
+		for (let item in reply?.nftables ?? [])
+			for (let e in item.set?.elem ?? [])
+				if (type(e.elem?.val) == 'string')
+					push(out, { ip: e.elem.val, expires: e.elem.expires ?? null });
+	}
+	return out;
+}
+
+function guard_get() {
+	const cur = uci();
+	return {
+		enabled: cur.get('supacudy', 'guard', 'enabled') != '0',
+		attempts: guard_value(cur, 'attempts'),
+		window: guard_value(cur, 'window'),
+		ban: guard_value(cur, 'ban'),
+		banned: banned()
+	};
+}
+
+function guard_set(req) {
+	const a = req.args;
+	if (type(a.enabled) != 'bool')
+		return req.error(INVALID);
+	for (let k, range in GUARD_LIMITS)
+		if (type(a[k]) != 'int' || a[k] < range[0] || a[k] > range[1])
+			return req.error(INVALID);
+	const cur = uci();
+	if (!cur.get('supacudy', 'guard'))
+		cur.set('supacudy', 'guard', 'guard');
+	cur.set('supacudy', 'guard', 'enabled', a.enabled ? '1' : '0');
+	for (let k in keys(GUARD_LIMITS))
+		cur.set('supacudy', 'guard', k, `${a[k]}`);
+	cur.commit('supacudy');
+	// The numbers are read on every login event; only on/off needs the service.
+	run_later(`/etc/init.d/supacudy-login-guard ${a.enabled ? 'start' : 'stop'}`, 0);
+	return { applied: true };
+}
+
+function guard_unban(req) {
+	const ip = req.args.ip;
+	if (type(ip) != 'string' || !(match(ip, /^[0-9.]{7,15}$/) || match(ip, /^[0-9a-f:]{2,39}$/)))
+		return req.error(INVALID);
+	if (!length(filter(banned(), (b) => b.ip == ip)))
+		return req.error(NOT_FOUND);
+	const set = index(ip, ':') >= 0 ? 'ban6' : 'ban4';
+	return system([ 'nft', 'delete', 'element', 'inet', GUARD_TABLE, set, `{ ${ip} }` ], 5000) == 0 ?
+		{ applied: true } : fail('unban_failed');
+}
+
 const methods = {
+	guard_get: { call: guard_get },
+	guard_set: { args: { enabled: false, attempts: 0, window: 0, ban: 0 }, call: guard_set },
+	guard_unban: { args: { ip: '' }, call: guard_unban },
 	wan_access_get: { call: wan_access_get },
 	wan_access_set: { args: { webui: false, ssh: false }, call: wan_access_set },
 	firewall_get: { call: firewall_get },

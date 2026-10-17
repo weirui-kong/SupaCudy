@@ -2,3 +2,11 @@ config supacudy 'main'
 	option setup_done '0'
 	# Percent of CPU time for all programs; see /usr/libexec/supacudy/cpu-limit.
 	option cpu_limit '80'
+
+# Login protection, see /usr/libexec/supacudy/login-guard.uc: attempts within
+# window minutes ban the address from management for ban minutes.
+config guard 'guard'
+	option enabled '1'
+	option attempts '3'
+	option window '30'
+	option ban '120'

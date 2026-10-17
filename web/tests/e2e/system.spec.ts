@@ -138,6 +138,53 @@ test.describe('settings: access from the WAN', () => {
   });
 });
 
+test.describe('settings: login protection', () => {
+  test.beforeEach(async ({ page }, testInfo) => {
+    await openPage(page, testInfo, 'settings', messages(testInfo).nav.settings);
+  });
+
+  test('is on with 3 failures in 30 minutes banning for 120, and lists banned addresses', async ({ page }, testInfo) => {
+    const m = messages(testInfo);
+    const guard = card(page, m.guard.title);
+    await expect(guard.getByRole('switch', { name: m.guard.enable })).toBeChecked();
+    await expect(guard).toContainText(fill(m.guard.hint, { attempts: 3, window: 30, ban: 120 }));
+    await expect(guard.getByLabel(m.guard.attempts, { exact: true })).toHaveValue('3');
+    await expect(guard.getByLabel(m.guard.window, { exact: true })).toHaveValue('30');
+    await expect(guard.getByLabel(m.guard.ban, { exact: true })).toHaveValue('120');
+    await expect(guard.getByRole('listitem').filter({ hasText: '203.0.113.50' })).toBeVisible();
+    await expectPageQuality(page);
+  });
+
+  test('changes the numbers and rejects ones out of range', async ({ page, router }, testInfo) => {
+    const m = messages(testInfo);
+    const guard = card(page, m.guard.title);
+    const apply = guard.getByRole('button', { name: m.common.apply });
+    await expect(apply).toBeDisabled();
+    await guard.getByLabel(m.guard.attempts, { exact: true }).fill('0');
+    await expect(guard.getByText(fill(m.guard.range, { min: 1, max: 20 }))).toBeVisible();
+    await expect(apply).toBeDisabled();
+    await guard.getByLabel(m.guard.attempts, { exact: true }).fill('5');
+    await guard.getByLabel(m.guard.window, { exact: true }).fill('10');
+    await guard.getByLabel(m.guard.ban, { exact: true }).fill('1440');
+    await apply.click();
+    await expect.poll(() => router.guard).toMatchObject({ enabled: true, attempts: 5, window: 10, ban: 1440 });
+    await expect(guard).toContainText(fill(m.guard.hint, { attempts: 5, window: 10, ban: 1440 }));
+  });
+
+  test('unbans an address and can be turned off', async ({ page, router }, testInfo) => {
+    const m = messages(testInfo);
+    const guard = card(page, m.guard.title);
+    await guard.getByRole('button', { name: `${m.guard.unban} 203.0.113.50` }).click();
+    await expect(page.getByRole('status').filter({ hasText: fill(m.guard.unbanned, { ip: '203.0.113.50' }) })).toBeVisible();
+    await expect(guard.getByText(m.guard.none)).toBeVisible();
+    expect(router.guard.banned).toEqual([]);
+
+    await guard.getByRole('switch', { name: m.guard.enable }).uncheck();
+    await expect.poll(() => router.guard.enabled).toBe(false);
+    await expect(guard.getByLabel(m.guard.attempts, { exact: true })).toHaveCount(0);
+  });
+});
+
 test.describe('maintenance', () => {
   test.beforeEach(async ({ page }, testInfo) => {
     await page.clock.install();

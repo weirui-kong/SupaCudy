@@ -64,3 +64,29 @@ export interface WanAccess {
 
 export const getWanAccess = () => supacudy<WanAccess>('wan_access_get');
 export const setWanAccess = (a: WanAccess) => supacudy<{ applied: boolean }>('wan_access_set', { ...a });
+
+/** Inclusive ranges the router accepts; attempts are counted within `window` minutes. */
+export const GUARD_LIMITS = { attempts: [1, 20], window: [1, 1440], ban: [1, 10080] } as const;
+
+export interface GuardSettings {
+  enabled: boolean;
+  attempts: number;
+  /** Minutes in which the failures are counted. */
+  window: number;
+  /** Minutes an address stays banned. */
+  ban: number;
+}
+
+export interface GuardState extends GuardSettings {
+  /** expires: seconds left. */
+  banned: { ip: string; expires: number | null }[];
+}
+
+export const getGuard = () => supacudy<GuardState>('guard_get');
+export const setGuard = (s: GuardSettings) => supacudy<{ applied: boolean }>('guard_set', { ...s });
+export const unbanAddress = (ip: string) => supacudy<{ applied: boolean }>('guard_unban', { ip });
+
+export function guardFieldError(name: keyof typeof GUARD_LIMITS, value: string): 'range' | null {
+  const [min, max] = GUARD_LIMITS[name];
+  return /^\d+$/.test(value.trim()) && Number(value) >= min && Number(value) <= max ? null : 'range';
+}

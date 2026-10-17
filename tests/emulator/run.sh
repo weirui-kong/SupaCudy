@@ -17,7 +17,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # Two groups of about the same length; system reboots, so it goes last.
 # Suites that build on each other (vpn, ovpn) stay in one group.
 GROUP_A=(scenario clients lan wireless internet tethering failover ports dns tailscale ddns schedule netmode)
-GROUP_B=(scenario adguard vpn ovpn rescue system)
+GROUP_B=(scenario adguard vpn ovpn rescue guard system)
 
 run_suites() {
 	# shellcheck source=tests/emulator/lib.sh

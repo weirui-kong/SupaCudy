@@ -92,7 +92,7 @@ docker exec -e PASSWORD="$PASSWORD" "$NAME" sh -euc '
 	sleep 1
 	/sbin/rpcd >/dev/null 2>&1 &
 	sleep 1
-	/usr/sbin/uhttpd -p 0.0.0.0:80 -h /www -u /ubus >/dev/null 2>&1
+	/usr/sbin/uhttpd -p 0.0.0.0:80 -h /www -u /ubus -x /cgi-bin >/dev/null 2>&1
 '
 
 URL="http://localhost:$PORT"
@@ -119,13 +119,26 @@ done
 echo "==> GET /supacudy/"
 curl -fsS "$URL/supacudy/" | grep -q '<title>SupaCudy</title>' || fail "UI page not served"
 
-echo "==> session.login with a wrong password is rejected"
-rpc "$ANON" session login '{"username":"root","password":"wrong"}' | denied ||
-	fail "wrong password was not rejected"
+# The UI logs in through the login CGI, which logs failures with the address
+# for the login protection; anonymous session.login on /ubus is closed.
+login() {
+	curl -sS -o /dev/stdout -w '\n%{http_code}' "$URL/cgi-bin/supacudy-login" -H 'Content-Type: application/json' \
+		-d "{\"password\":\"$1\"}"
+}
 
-echo "==> session.login"
-SESSION="$(rpc "$ANON" session login "{\"username\":\"root\",\"password\":\"$PASSWORD\"}" |
-	sed -n 's/.*"ubus_rpc_session":"\([0-9a-f]*\)".*/\1/p')"
+echo "==> session.login on /ubus is closed to anonymous callers, even with the right password"
+rpc "$ANON" session login "{\"username\":\"root\",\"password\":\"$PASSWORD\"}" | denied ||
+	fail "anonymous session.login is still open"
+
+echo "==> a wrong password is rejected by the login CGI"
+login wrong | tail -1 | grep -qx 403 || fail "wrong password was not rejected"
+
+echo "==> a request without a password is malformed"
+curl -sS -o /dev/null -w '%{http_code}' "$URL/cgi-bin/supacudy-login" -d '{}' | grep -qx 400 ||
+	fail "a request without a password was not refused as malformed"
+
+echo "==> login through the CGI"
+SESSION="$(login "$PASSWORD" | sed -n 's/.*"ubus_rpc_session": *"\([0-9a-f]*\)".*/\1/p')"
 [ -n "$SESSION" ] || fail "login failed"
 
 echo "==> supacudy.info"

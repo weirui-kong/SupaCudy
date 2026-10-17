@@ -141,14 +141,28 @@ export class MockRouter {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   }
 
-  private dispatch(session: string, object: string, method: string, args: Args): Reply {
-    if (object === 'session' && method === 'login') {
-      const expected = this.setup.default_password ? 'supacudy' : this.setup.password_set ? this.password : '';
-      if (args.username !== 'root' || args.password !== expected) return { status: 6 };
-      const id = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-      this.sessions.add(id);
-      return { status: 0, data: { ubus_rpc_session: id, timeout: 300 } };
+  // /cgi-bin/supacudy-login; session.login on /ubus is closed like on the router.
+  loginAttempts = 0;
+
+  async handleLogin(route: Route) {
+    let password: unknown;
+    try {
+      password = JSON.parse(route.request().postData() ?? '{}').password;
+    } catch {
+      password = undefined;
     }
+    const reply = (status: number, body: object) =>
+      route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+    if (typeof password !== 'string') return reply(400, { error: 'invalid' });
+    this.loginAttempts++;
+    const expected = this.setup.default_password ? 'supacudy' : this.setup.password_set ? this.password : '';
+    if (password !== expected) return reply(403, { error: 'wrong_password' });
+    const id = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+    this.sessions.add(id);
+    return reply(200, { ubus_rpc_session: id, expires: 300 });
+  }
+
+  private dispatch(session: string, object: string, method: string, args: Args): Reply {
     if (session === ANON && object === 'supacudy' && method === 'setup_status') return this.m_setup_status();
     if (session === ANON || !this.sessions.has(session)) return { jsonrpcError: -32002 };
     if (object === 'session' && method === 'destroy') {
@@ -940,6 +954,31 @@ export class MockRouter {
   }
 
   wanAccess = { webui: true, ssh: false };
+
+  guard = {
+    enabled: true, attempts: 3, window: 30, ban: 120,
+    banned: [{ ip: '203.0.113.50', expires: 5400 }] as { ip: string; expires: number | null }[],
+  };
+
+  m_guard_get() {
+    return this.ok(structuredClone(this.guard));
+  }
+
+  m_guard_set(a: Args) {
+    const within = (v: unknown, min: number, max: number) => Number.isInteger(v) && (v as number) >= min && (v as number) <= max;
+    if (typeof a.enabled !== 'boolean' || !within(a.attempts, 1, 20) || !within(a.window, 1, 1440) || !within(a.ban, 1, 10080))
+      return { status: INVALID };
+    Object.assign(this.guard, { enabled: a.enabled, attempts: a.attempts, window: a.window, ban: a.ban });
+    if (!a.enabled) this.guard.banned = [];
+    return this.ok({ applied: true });
+  }
+
+  m_guard_unban(a: Args) {
+    if (typeof a.ip !== 'string') return { status: INVALID };
+    const before = this.guard.banned.length;
+    this.guard.banned = this.guard.banned.filter((b) => b.ip !== a.ip);
+    return before === this.guard.banned.length ? { status: NOT_FOUND } : this.ok({ applied: true });
+  }
 
   m_wan_access_get() {
     return this.ok({ ...this.wanAccess });

@@ -1,0 +1,57 @@
+#!/usr/bin/ucode
+// Copyright 2026 SupaCudy contributors
+// SPDX-License-Identifier: Apache-2.0
+//
+// The web UI's login. It replaces session.login on /ubus (which
+// 90-supacudy closes to anonymous callers) because rpcd never learns the
+// caller's address: here every failure is logged with it, and the login
+// protection (/usr/libexec/supacudy/login-guard.uc) counts them.
+//
+//   POST {"password": "..."}  ->  200 {"ubus_rpc_session": "...", "expires": n}
+//                                 403 {"error": "wrong_password"}
+
+'use strict';
+
+import { stdin } from 'fs';
+import * as ubus from 'ubus';
+
+const BODY_MAX = 4096;
+
+function reply(status, body) {
+	print(`Status: ${status}\r\nContent-Type: application/json\r\nCache-Control: no-store\r\n\r\n${sprintf('%J', body)}\n`);
+	exit(0);
+}
+
+// The address only goes to the log, as an argument, never through a shell.
+function log(level, message) {
+	system([ 'logger', '-p', `authpriv.${level}`, '-t', 'supacudy-login', message ]);
+}
+
+const ip = getenv('REMOTE_ADDR') ?? '';
+const addr = match(ip, /^[0-9A-Fa-f:.]{2,45}$/) ? ip : 'unknown';
+
+if (getenv('REQUEST_METHOD') != 'POST')
+	reply('405 Method Not Allowed', { error: 'method' });
+
+const size = +(getenv('CONTENT_LENGTH') ?? 0);
+if (size < 1 || size > BODY_MAX)
+	reply('400 Bad Request', { error: 'invalid' });
+
+let request = null;
+try {
+	request = json(stdin.read(size));
+} catch {
+	request = null;
+}
+// Empty is allowed: a router without a password yet takes it (first setup).
+if (type(request?.password) != 'string')
+	reply('400 Bad Request', { error: 'invalid' });
+
+const conn = ubus.connect();
+const session = conn?.call('session', 'login', { username: 'root', password: request.password });
+if (!session?.ubus_rpc_session) {
+	log('notice', `failed login from ${addr}`);
+	reply('403 Forbidden', { error: 'wrong_password' });
+}
+log('info', `login from ${addr}`);
+reply('200 OK', { ubus_rpc_session: session.ubus_rpc_session, expires: session.expires });

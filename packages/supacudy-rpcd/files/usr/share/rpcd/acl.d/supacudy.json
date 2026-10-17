@@ -32,7 +32,8 @@
 					"tailscale_get",
 					"uplinks_get",
 					"cpu_limit_get",
-					"wan_access_get"
+					"wan_access_get",
+					"guard_get"
 				]
 			}
 		},
@@ -99,7 +100,9 @@
 					"tailscale_logout",
 					"uplinks_set",
 					"cpu_limit_set",
-					"wan_access_set"
+					"wan_access_set",
+					"guard_set",
+					"guard_unban"
 				]
 			},
 			"cgi-io": [

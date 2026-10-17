@@ -18,7 +18,7 @@ export default defineConfig({
     assetsInlineLimit: 0,
   },
   server: {
-    proxy: { '/ubus': target },
+    proxy: { '/ubus': target, '/cgi-bin': target },
   },
   resolve: process.env.VITEST ? { conditions: ['browser'] } : undefined,
   test: {

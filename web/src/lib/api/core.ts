@@ -28,6 +28,7 @@ const SESSION_KEY = 'supacudy.session';
 const ENDPOINT = '/ubus';
 const UPLOAD_ENDPOINT = '/cgi-bin/cgi-upload';
 const WHOAMI_ENDPOINT = '/cgi-bin/supacudy-whoami';
+const LOGIN_ENDPOINT = '/cgi-bin/supacudy-login';
 
 // ubus status codes (libubus UBUS_STATUS_*) that the UI distinguishes.
 const UBUS_INVALID_ARGUMENT = 2;
@@ -128,25 +129,48 @@ async function callAs<T>(session: string | null, object: string, method: string,
   }
 }
 
+// Through a CGI rather than session.login on /ubus, which the router closes
+// to anonymous callers: the CGI sees the caller's address, and the login
+// protection bans addresses by their failed logins.
+async function openSession(password: string): Promise<string> {
+  let response: Response;
+  try {
+    response = await fetch(LOGIN_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+      cache: 'no-store',
+    });
+  } catch {
+    throw new ApiError('network');
+  }
+  if (response.status === 403) throw new ApiError('denied', UBUS_PERMISSION_DENIED);
+  if (response.status === 400) throw new ApiError('invalid', UBUS_INVALID_ARGUMENT);
+  let body: { ubus_rpc_session?: unknown };
+  try {
+    body = await response.json();
+  } catch {
+    throw new ApiError('unknown');
+  }
+  if (!response.ok || typeof body.ubus_rpc_session !== 'string' || !body.ubus_rpc_session) throw new ApiError('unknown');
+  return body.ubus_rpc_session;
+}
+
 export async function login(password: string): Promise<void> {
-  const result = await call<{ ubus_rpc_session?: string }>(
-    'session', 'login', { username: 'root', password }, true,
-  );
-  if (!result.ubus_rpc_session) throw new ApiError('unknown');
-  storeSession(result.ubus_rpc_session);
+  storeSession(await openSession(password));
 }
 
 // Checks a password without touching the current session: the router
 // cannot verify it itself (no crypt in ucode), so log in once and drop it.
 export async function verifyPassword(password: string): Promise<boolean> {
-  let result: { ubus_rpc_session?: string };
+  let session: string;
   try {
-    result = await call('session', 'login', { username: 'root', password }, true);
+    session = await openSession(password);
   } catch (err) {
     if (err instanceof ApiError && err.code === 'denied') return false;
     throw err;
   }
-  if (result.ubus_rpc_session) await callAs(result.ubus_rpc_session, 'session', 'destroy', {}).catch(() => {});
+  await callAs(session, 'session', 'destroy', {}).catch(() => {});
   return true;
 }
 

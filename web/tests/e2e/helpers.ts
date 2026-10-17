@@ -16,6 +16,7 @@ export const test = base.extend<{ router: MockRouter }>({
       const router = new MockRouter();
       await page.route('**/ubus', (route) => router.handle(route));
       await page.route('**/cgi-bin/cgi-upload', (route) => router.handleUpload(route));
+      await page.route('**/cgi-bin/supacudy-login', (route) => router.handleLogin(route));
       await page.route('**/cgi-bin/supacudy-whoami', (route) =>
         route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ip: router.callerIp }) }),
       );

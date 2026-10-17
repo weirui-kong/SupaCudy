@@ -1,0 +1,27 @@
+#!/bin/sh /etc/rc.common
+# Copyright 2026 SupaCudy contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Login protection, see /usr/libexec/supacudy/login-guard.uc.
+
+# shellcheck disable=SC2034 # read by rc.common
+START=99
+# shellcheck disable=SC2034 # read by rc.common
+USE_PROCD=1
+
+GUARD=/usr/libexec/supacudy/login-guard.uc
+
+start_service() {
+	if [ "$(uci -q get supacudy.guard.enabled)" = 0 ]; then
+		ucode "$GUARD" stop
+		return 0
+	fi
+	procd_open_instance
+	procd_set_param command ucode "$GUARD"
+	procd_set_param respawn 3600 5 0
+	procd_close_instance
+}
+
+stop_service() {
+	ucode "$GUARD" stop
+}

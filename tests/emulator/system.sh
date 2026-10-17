@@ -20,9 +20,10 @@ rpc() {
 	local args="${4:-}"
 	curl -s --max-time 20 "$BASE/ubus" -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"call\",\"params\":[\"$1\",\"$2\",\"$3\",${args:-"{}"}]}"
 }
+# Through the login CGI like the UI: session.login on /ubus is closed.
 session() {
-	rpc 00000000000000000000000000000000 session login "{\"username\":\"root\",\"password\":\"$1\"}" |
-		python3 -I -c 'import json, sys; print(json.load(sys.stdin)["result"][1]["ubus_rpc_session"])' 2>/dev/null
+	curl -s --max-time 20 "$BASE/cgi-bin/supacudy-login" -H 'Content-Type: application/json' -d "{\"password\":\"$1\"}" |
+		python3 -I -c 'import json, sys; print(json.load(sys.stdin)["ubus_rpc_session"])' 2>/dev/null
 }
 upload() {
 	curl -s --max-time 30 -F "sessionid=$1" -F "filename=$2" -F filemode=0600 -F "filedata=@$UPLOAD" "$BASE/cgi-bin/cgi-upload"

@@ -28,6 +28,13 @@ test.describe('login', () => {
     await expect(page.getByRole('alert')).toContainText(messages(testInfo).login.wrong_password);
   });
 
+  test('logs in through the login endpoint, which counts failures by address', async ({ page, router }, testInfo) => {
+    await login(page, testInfo, 'definitely-wrong');
+    await expect(page.getByRole('alert')).toContainText(messages(testInfo).login.wrong_password);
+    await loginAndWait(page, testInfo);
+    expect(router.loginAttempts).toBe(2);
+  });
+
   test('opens the overview after a correct password', async ({ page }, testInfo) => {
     await loginAndWait(page, testInfo);
     await expect(page).toHaveTitle(`${messages(testInfo).overview.title} · SupaCudy`);

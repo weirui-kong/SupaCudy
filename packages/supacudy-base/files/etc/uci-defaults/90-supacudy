@@ -39,6 +39,30 @@ done
 # watcher's own routes sit below all three.
 [ -n "$(uci -q get network.wan.metric)" ] || { uci set network.wan.metric='10'; uci commit network; }
 
+# The web UI logs in through /cgi-bin/supacudy-login, which logs the caller's
+# address for the login protection. Anonymous session.login on /ubus would let
+# password guessing go uncounted, so rpcd's ACL for anonymous callers keeps
+# only "access". The file belongs to rpcd: a newer rpcd brings the original
+# back until this runs again on the next first boot.
+ACL=/usr/share/rpcd/acl.d/unauthenticated.json
+if [ -f "$ACL" ] && grep -q '"login"' "$ACL"; then
+	cat > "$ACL" <<-'EOF'
+	{
+		"unauthenticated": {
+			"description": "Access controls for unauthenticated requests",
+			"read": {
+				"ubus": {
+					"session": [
+						"access"
+					]
+				}
+			}
+		}
+	}
+	EOF
+	[ -x /etc/init.d/rpcd ] && /etc/init.d/rpcd reload
+fi
+
 # The tailscale package starts its daemon on install; it stays off until
 # remote access is turned on in the UI.
 if [ -x /etc/init.d/tailscale ] && [ "$(uci -q get supacudy.remote.tailscale)" != 1 ]; then
