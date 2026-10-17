@@ -61,7 +61,8 @@ check "base: version file matches package version" \
 check "base: uci-defaults script is executable" is_exec supacudy-base etc/uci-defaults/90-supacudy
 check "base: first-boot defaults script is executable" is_exec supacudy-base etc/uci-defaults/91-supacudy-defaults
 for f in etc/init.d/supacudy-rescue usr/libexec/supacudy/rescue-watch usr/libexec/supacudy/dhcp-probe \
-	etc/init.d/supacudy-failover usr/libexec/supacudy/failover-watch; do
+	etc/init.d/supacudy-failover usr/libexec/supacudy/failover-watch \
+	etc/init.d/supacudy-cpu-limit usr/libexec/supacudy/cpu-limit; do
 	check "base: $f is executable" is_exec supacudy-base "$f"
 done
 check "base: ships the failover watcher" has_file supacudy-base usr/libexec/supacudy/failover.uc

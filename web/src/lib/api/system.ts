@@ -18,10 +18,18 @@ export interface SystemStatus {
   memory: { total: number; available: number };
   /** Flash space for settings and packages; null when it cannot be read. */
   storage: { total: number; available: number } | null;
+  /** °C; null where the router has no such sensor. */
+  temperature: { cpu: number | null; wifi: number | null };
 }
+
+/** Percent of all cores that programs together may use. */
+export const CPU_LIMITS = [30, 50, 80, 100] as const;
+export type CpuLimit = (typeof CPU_LIMITS)[number];
 
 export const getDeviceInfo = () => supacudy<DeviceInfo>('info');
 export const getSystemStatus = () => supacudy<SystemStatus>('status');
+export const getCpuLimit = () => supacudy<{ limit: CpuLimit }>('cpu_limit_get');
+export const setCpuLimit = (limit: CpuLimit) => supacudy<{ applied: boolean }>('cpu_limit_set', { limit });
 
 export interface TimeSettings {
   /** Seconds since the epoch on the router. */

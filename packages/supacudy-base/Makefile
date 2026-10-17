@@ -7,7 +7,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=supacudy-base
 PKG_VERSION:=0.4.0
-PKG_RELEASE:=3
+PKG_RELEASE:=4
 
 PKG_LICENSE:=Apache-2.0
 PKG_MAINTAINER:=SupaCudy contributors
@@ -50,6 +50,7 @@ define Package/supacudy-base/install
 	$(INSTALL_BIN) ./files/etc/init.d/supacudy-repeater $(1)/etc/init.d/
 	$(INSTALL_BIN) ./files/etc/init.d/supacudy-rescue $(1)/etc/init.d/
 	$(INSTALL_BIN) ./files/etc/init.d/supacudy-failover $(1)/etc/init.d/
+	$(INSTALL_BIN) ./files/etc/init.d/supacudy-cpu-limit $(1)/etc/init.d/
 	$(INSTALL_DIR) $(1)/usr/libexec/supacudy
 	$(INSTALL_DATA) ./files/usr/libexec/supacudy/policy.uc $(1)/usr/libexec/supacudy/
 	$(INSTALL_BIN) ./files/usr/libexec/supacudy/repeater-watch $(1)/usr/libexec/supacudy/
@@ -57,6 +58,7 @@ define Package/supacudy-base/install
 	$(INSTALL_BIN) ./files/usr/libexec/supacudy/rescue-watch $(1)/usr/libexec/supacudy/
 	$(INSTALL_DATA) ./files/usr/libexec/supacudy/failover.uc $(1)/usr/libexec/supacudy/
 	$(INSTALL_BIN) ./files/usr/libexec/supacudy/failover-watch $(1)/usr/libexec/supacudy/
+	$(INSTALL_BIN) ./files/usr/libexec/supacudy/cpu-limit $(1)/usr/libexec/supacudy/
 	$(INSTALL_BIN) ./files/usr/libexec/supacudy/dhcp-probe $(1)/usr/libexec/supacudy/
 	$(INSTALL_DIR) $(1)/etc/hotplug.d/net
 	$(INSTALL_DATA) ./files/etc/hotplug.d/net/30-supacudy-tethering $(1)/etc/hotplug.d/net/

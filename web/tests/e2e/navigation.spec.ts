@@ -25,6 +25,17 @@ test.describe('navigation', () => {
     }
   });
 
+  test('keeps the content centered on a very wide screen', async ({ page }, testInfo) => {
+    test.skip(isMobile(testInfo), 'phones use the full width');
+    await page.setViewportSize({ width: 2400, height: 900 });
+    const sidebar = (await page.locator('nav.sidebar').boundingBox())!;
+    const main = (await page.locator('main').boundingBox())!;
+    const left = main.x - (sidebar.x + sidebar.width);
+    const right = 2400 - (main.x + main.width);
+    expect(left).toBeGreaterThan(100);
+    expect(Math.abs(left - right)).toBeLessThan(2);
+  });
+
   test('reaches every page and marks the current one', async ({ page }, testInfo) => {
     const m = messages(testInfo);
     const nav = page.getByRole('navigation', { name: m.nav.main }).filter({ visible: true });
@@ -57,7 +68,7 @@ test.describe('navigation', () => {
       await page.getByRole('main').getByRole('button', { name: m.nav.luci }).click();
     } else {
       const button = page.locator('nav.sidebar').getByRole('button', { name: m.nav.luci });
-      // Bottom left, just above "Log out".
+      // Bottom left, just above "Log Out".
       const logout = page.locator('nav.sidebar').getByRole('button', { name: m.nav.logout });
       expect((await button.boundingBox())!.y).toBeLessThan((await logout.boundingBox())!.y);
       expect((await button.boundingBox())!.y).toBeGreaterThan(page.viewportSize()!.height / 2);

@@ -13,7 +13,7 @@
   import Segmented from '../components/Segmented.svelte';
   import Switch from '../components/Switch.svelte';
   import {
-    FIRMWARE_PATH, OFFLOAD_MODES, checkFirmware, getFirewall, setOffload, type OffloadMode, discardFirmware, factoryReset, getDeviceInfo, rebootRouter, upgradeFirmware,
+    CPU_LIMITS, FIRMWARE_PATH, OFFLOAD_MODES, getCpuLimit, setCpuLimit, type CpuLimit, checkFirmware, getFirewall, setOffload, type OffloadMode, discardFirmware, factoryReset, getDeviceInfo, rebootRouter, upgradeFirmware,
     uploadFile, type DeviceInfo, type FirmwareCheck,
   } from '../lib/api';
   import { errorMessage } from '../lib/errors';
@@ -35,11 +35,21 @@
   let input = $state<HTMLInputElement>();
 
   let offload = $state<OffloadMode | null>(null);
+  let cpuLimit = $state<CpuLimit | null>(null);
 
   $effect(() => {
     getDeviceInfo().then((i) => (info = i)).catch(() => {});
     getFirewall().then((f) => (offload = f.offload)).catch(() => {});
+    getCpuLimit().then((c) => (cpuLimit = c.limit)).catch(() => {});
   });
+
+  async function changeCpuLimit(limit: CpuLimit) {
+    const previous = cpuLimit;
+    cpuLimit = limit;
+    if (!(await apply(() => setCpuLimit(limit)))) cpuLimit = previous;
+  }
+
+  const cpuOptions = CPU_LIMITS.map((value) => ({ value: String(value), label: `${value}%` }));
 
   async function changeOffload(mode: OffloadMode) {
     const previous = offload;
@@ -174,6 +184,14 @@
       <p class="hint">{t('maintenance.acceleration_hint')}</p>
       <Segmented label={t('maintenance.offload_mode')} options={offloadOptions} value={offload} onchange={(v: OffloadMode) => changeOffload(v)} />
       {#if offload !== 'off'}<p class="hint note">{t('maintenance.offload_note')}</p>{/if}
+    </Card>
+  {/if}
+
+  {#if cpuLimit}
+    <Card title={t('maintenance.cpu_limit')}>
+      <p class="hint">{t('maintenance.cpu_limit_hint')}</p>
+      <Segmented label={t('maintenance.cpu_limit')} options={cpuOptions} value={String(cpuLimit)} onchange={(v) => changeCpuLimit(Number(v) as CpuLimit)} />
+      <p class="hint note">{t('maintenance.cpu_limit_note')}</p>
     </Card>
   {/if}
 

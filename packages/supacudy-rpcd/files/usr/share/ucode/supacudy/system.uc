@@ -6,7 +6,7 @@
 
 'use strict';
 
-import { readfile, popen, stat, unlink } from 'fs';
+import { readfile, popen, stat, unlink, lsdir } from 'fs';
 import zoneinfo from 'luci.zoneinfo';
 import { sync_login, valid_hash, default_password_in_use } from 'supacudy.adguard';
 import { INVALID, NOT_FOUND, ubus, uci, read_trimmed, run, run_later, fail } from 'supacudy.util';
@@ -55,6 +55,35 @@ function storage() {
 	if (r.code != 0 || length(f) < 4 || !match(f[1], /^\d+$/))
 		return null;
 	return { total: +f[1] * 1024, available: +f[3] * 1024 };
+}
+
+// Degrees Celsius, from the SoC's thermal zone and the Wi-Fi chip's sensor
+// (mt76 registers it as hwmon "mt79xx_phyN"); null where there is none.
+function temperatures() {
+	const celsius = (path) => {
+		const raw = read_trimmed(path);
+		return raw != null && match(raw, /^-?[0-9]+$/) ? int(+raw / 100) / 10 : null;
+	};
+	let cpu = null;
+	for (let zone in sort(lsdir('/sys/class/thermal') ?? [])) {
+		if (!match(zone, /^thermal_zone[0-9]+$/))
+			continue;
+		const value = celsius(`/sys/class/thermal/${zone}/temp`);
+		if (value != null && (cpu == null || match(read_trimmed(`/sys/class/thermal/${zone}/type`) ?? '', /cpu/)))
+			cpu = value;
+	}
+	let wifi = null;
+	for (let hw in sort(lsdir('/sys/class/hwmon') ?? []))
+		if (wifi == null && match(read_trimmed(`/sys/class/hwmon/${hw}/name`) ?? '', /^mt7/))
+			wifi = celsius(`/sys/class/hwmon/${hw}/temp1_input`);
+	return { cpu, wifi };
+}
+
+const CPU_LIMITS = [ 30, 50, 80, 100 ];
+
+function cpu_limit() {
+	const value = +(uci().get('supacudy', 'main', 'cpu_limit') ?? 100);
+	return value in CPU_LIMITS ? value : 100;
 }
 
 function cpu_count() {
@@ -210,8 +239,28 @@ const methods = {
 				load: [ +load[0], +load[1], +load[2] ],
 				cpus: cpu_count(),
 				memory: meminfo(),
-				storage: storage()
+				storage: storage(),
+				temperature: temperatures()
 			};
+		}
+	},
+
+	cpu_limit_get: {
+		call: function() {
+			return { limit: cpu_limit() };
+		}
+	},
+
+	cpu_limit_set: {
+		args: { limit: 0 },
+		call: function(req) {
+			if (!(req.args.limit in CPU_LIMITS))
+				return req.error(INVALID);
+			const cur = uci();
+			cur.set('supacudy', 'main', 'cpu_limit', `${req.args.limit}`);
+			cur.commit('supacudy');
+			run_later('/etc/init.d/supacudy-cpu-limit restart', 0);
+			return { applied: true };
 		}
 	},
 

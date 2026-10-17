@@ -1,0 +1,47 @@
+#!/bin/sh
+# Copyright 2026 SupaCudy contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Caps the CPU time all programs together may use, as a share of all cores
+# (supacudy.main.cpu_limit: 30, 50, 80 or 100). The MT7981 cannot change its
+# clock, so this is cgroup v2 bandwidth instead: procd starts every service
+# in a cgroup under services/, which gets the cap; programs started outside
+# a service (hotplug scripts and the like) are moved under it as well. The
+# kernel's own work, such as forwarding packets, is never capped.
+#
+#   cpu-limit        apply the setting and keep moving new programs
+#   cpu-limit stop   lift the cap
+
+CGROUP=/sys/fs/cgroup
+CAPPED="$CGROUP/services"
+OTHERS="$CAPPED/supacudy-other"
+PERIOD=100000
+
+cpu_max() {
+	percent="$(uci -q get supacudy.main.cpu_limit)"
+	case "$percent" in
+		30|50|80)
+			cpus="$(grep -c '^processor' /proc/cpuinfo)"
+			echo "$((percent * cpus * PERIOD / 100)) $PERIOD"
+			;;
+		*) echo "max $PERIOD" ;;
+	esac
+}
+
+if [ "$1" = stop ]; then
+	[ -w "$CAPPED/cpu.max" ] && echo "max $PERIOD" > "$CAPPED/cpu.max"
+	exit 0
+fi
+
+grep -qw cpu "$CGROUP/cgroup.subtree_control" || echo +cpu > "$CGROUP/cgroup.subtree_control" || exit 1
+cpu_max > "$CAPPED/cpu.max" || exit 1
+mkdir -p "$OTHERS"
+
+# Kernel threads cannot be moved and init stays where it is; the write just
+# fails for them.
+while :; do
+	while read -r pid; do
+		[ "$pid" = 1 ] || echo "$pid" > "$OTHERS/cgroup.procs" 2>/dev/null
+	done < "$CGROUP/cgroup.procs"
+	sleep 5
+done

@@ -79,6 +79,34 @@ if rpc 00000000000000000000000000000000 supacudy status | grep -q '"code":-32002
 else
 	not_ok "nothing else is readable before login"
 fi
+CPU_MAX=/sys/fs/cgroup/services/cpu.max
+cpu_max_for() { echo "[ \"\$(cat $CPU_MAX)\" = \"\$(($1 * \$(grep -c '^processor' /proc/cpuinfo) * 1000)) 100000\" ]"; }
+cpu_limit() { echo "ubus call supacudy cpu_limit_set '{\"limit\":$1}' | grep -q applied"; }
+# CPU time all programs used during 4 s with two busy loops, in percent of one core.
+BUSY_USAGE="u() { sed -n 's/^usage_usec //p' /sys/fs/cgroup/services/cpu.stat; };
+	(while :; do :; done) & a=\$!; (while :; do :; done) & b=\$!; sleep 1; s=\$(u); sleep 4; e=\$(u); kill \$a \$b;
+	echo \$(( (e - s) / 40000 ))"
+check "the status reports each temperature sensor, as null since the VM has none" \
+	"ubus call supacudy status | tr -d '\n\t ' | grep -q '\"temperature\":{\"cpu\":null,\"wifi\":null}'"
+check "programs may use 80% of the CPU out of the box" \
+	"ubus call supacudy cpu_limit_get | jsonfilter -e @.limit | grep -qx 80 && $(cpu_max_for 80) &&
+	 grep -qw cpu /sys/fs/cgroup/cgroup.subtree_control"
+eventually "a program started outside the services is moved under the limit" \
+	"sh -c 'echo \$\$ > /sys/fs/cgroup/cgroup.procs; exec sleep 30' & pid=\$!; sleep 7;
+	 grep -qx \$pid /sys/fs/cgroup/services/supacudy-other/cgroup.procs; found=\$?; kill \$pid; [ \$found = 0 ]"
+check "a limit that is not offered is rejected as invalid" "! ubus call supacudy cpu_limit_set '{\"limit\":42}'"
+check "the limit is set to 30%" "$(cpu_limit 30)"
+eventually "the cap follows" "$(cpu_max_for 30)"
+check "two busy programs get 30% of the CPU together" "[ \$($BUSY_USAGE) -le 65 ]"
+check "without a limit they get both cores" "$(cpu_limit 100) && sleep 2 && grep -qx 'max 100000' $CPU_MAX && [ \$($BUSY_USAGE) -ge 150 ]"
+check "the limit is back at 80%" "$(cpu_limit 80)"
+eventually "the cap follows again" "$(cpu_max_for 80)"
+if rpc 00000000000000000000000000000000 supacudy cpu_limit_set '{"limit":100}' | grep -q '"code":-32002'; then
+	ok "anonymous callers cannot change the CPU limit"
+else
+	not_ok "anonymous callers cannot change the CPU limit"
+fi
+
 check "finishing setup is stored" \
 	"ubus call supacudy setup_complete | grep -q true && [ \"\$(uci get supacudy.main.setup_done)\" = 1 ] &&
 	 ubus call supacudy setup_status | grep -q '\"setup_done\": true'"
@@ -86,3 +114,4 @@ check "finishing setup is stored" \
 check "a reboot is accepted" "ubus call supacudy reboot | grep -q rebooting"
 sleep 15
 eventually "the router comes back after the reboot" "[ \"\$(cut -d. -f1 /proc/uptime)\" -lt 300 ]"
+eventually "the CPU limit is applied again after the reboot" "$(cpu_max_for 80)"

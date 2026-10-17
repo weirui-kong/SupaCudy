@@ -1,7 +1,7 @@
 // Copyright 2026 SupaCudy contributors
 // SPDX-License-Identifier: Apache-2.0
 
-import { expect, expectPageQuality, loginAndWait, messages, test } from './helpers';
+import { expect, expectPageQuality, fill, loginAndWait, messages, test } from './helpers';
 
 test.describe('overview', () => {
   test.beforeEach(async ({ page }, testInfo) => {
@@ -13,6 +13,9 @@ test.describe('overview', () => {
     const row = (label: string) => page.locator('.row', { has: page.getByText(label, { exact: true }) }).locator('dd');
 
     await expect(row(m.overview.model)).toHaveText('Cudy TR3000 v1');
+    await expect(row(m.overview.temperature)).toHaveText(
+      fill(m.overview.temperature_value, { cpu: fill(m.overview.degrees, { value: '52' }), wifi: fill(m.overview.degrees, { value: '47' }) }),
+    );
     await expect(row(m.overview.openwrt)).toContainText(/^\d+\.\d+\.\d+/);
     await expect(row(m.overview.uptime)).not.toHaveText(m.common.unavailable);
     await expect(row(m.overview.cpus)).toHaveText(/^\d+$/);
@@ -20,9 +23,12 @@ test.describe('overview', () => {
     await expect(page.getByRole('meter', { name: m.overview.storage })).toHaveAttribute('aria-valuetext', '30%');
   });
 
-  test('links to the source code on GitHub in a new window', async ({ page }, testInfo) => {
+  test('links to the source code on GitHub with an icon, in a new window', async ({ page }, testInfo) => {
     const m = messages(testInfo);
-    const link = page.locator('.row', { has: page.getByText(m.overview.source, { exact: true }) }).getByRole('link');
+    const link = page.getByRole('link', { name: new RegExp(m.overview.source) });
+    await expect(page.getByText(m.overview.source, { exact: true })).toBeHidden();
+    await expect(link.locator('svg')).toBeVisible();
+    await expect(link).not.toContainText('github.com');
     await expect(link).toHaveAttribute('href', 'https://github.com/weirui-kong/SupaCudy');
     await expect(link).toHaveAttribute('target', '_blank');
     await expect(link).toHaveAttribute('rel', /noopener/);

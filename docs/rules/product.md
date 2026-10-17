@@ -18,7 +18,7 @@
 - Only Simplified Chinese (zh-CN) and English (en).
 - On first visit, pick the language from the browser; anything else falls back to English. Users can switch manually and the choice is remembered.
 - All UI text goes through i18n keys. Both languages must always have the full set of keys; a raw key must never be shown.
-- Chinese uses standard written Simplified Chinese; English uses concise sentence case. Terms stay consistent with the glossary below.
+- Chinese uses standard written Simplified Chinese; English uses concise sentence case, except navigation sections and page titles, which use title case ("Port Forwarding", "Ad Blocking"). Terms stay consistent with the glossary below.
 
 ## Light and dark mode
 

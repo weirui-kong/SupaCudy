@@ -31,6 +31,7 @@
 					"adguard_get",
 					"tailscale_get",
 					"uplinks_get",
+					"cpu_limit_get",
 					"wan_access_get"
 				]
 			}
@@ -97,6 +98,7 @@
 					"tailscale_set",
 					"tailscale_logout",
 					"uplinks_set",
+					"cpu_limit_set",
 					"wan_access_set"
 				]
 			},

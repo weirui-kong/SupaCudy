@@ -273,7 +273,21 @@ export class MockRouter {
       cpus: 2,
       memory: { total: 512 * 1024 ** 2, available: 384 * 1024 ** 2 },
       storage: { total: 100 * 1024 ** 2, available: 70 * 1024 ** 2 },
+      temperature: { ...this.temperature },
     });
+  }
+
+  temperature = { cpu: 52.4 as number | null, wifi: 47 as number | null };
+  cpuLimit = 80;
+
+  m_cpu_limit_get() {
+    return this.ok({ limit: this.cpuLimit });
+  }
+
+  m_cpu_limit_set(a: Args) {
+    if (![30, 50, 80, 100].includes(a.limit as number)) return { status: INVALID };
+    this.cpuLimit = a.limit as number;
+    return this.ok({ applied: true });
   }
 
   m_clients_list() {

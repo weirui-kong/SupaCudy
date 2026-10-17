@@ -135,6 +135,7 @@
     padding: var(--space-4);
     padding-bottom: calc(var(--bottom-nav-height) + var(--space-7) + env(safe-area-inset-bottom));
     max-width: var(--content-max-width);
+    margin-inline: auto;
     outline: none;
   }
 

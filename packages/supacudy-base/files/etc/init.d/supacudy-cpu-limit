@@ -1,0 +1,21 @@
+#!/bin/sh /etc/rc.common
+# Copyright 2026 SupaCudy contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# CPU time limit, see /usr/libexec/supacudy/cpu-limit.
+
+# shellcheck disable=SC2034 # read by rc.common
+START=99
+# shellcheck disable=SC2034 # read by rc.common
+USE_PROCD=1
+
+start_service() {
+	procd_open_instance
+	procd_set_param command /usr/libexec/supacudy/cpu-limit
+	procd_set_param respawn 3600 5 5
+	procd_close_instance
+}
+
+stop_service() {
+	/usr/libexec/supacudy/cpu-limit stop
+}

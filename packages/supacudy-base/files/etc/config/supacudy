@@ -1,2 +1,4 @@
 config supacudy 'main'
 	option setup_done '0'
+	# Percent of CPU time for all programs; see /usr/libexec/supacudy/cpu-limit.
+	option cpu_limit '80'

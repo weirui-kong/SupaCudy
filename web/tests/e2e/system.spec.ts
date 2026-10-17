@@ -132,7 +132,7 @@ test.describe('settings: access from the WAN', () => {
     const m = messages(testInfo);
     router.failNext('wan_access_set', { status: 0, data: { error: 'something_new' } });
     const wan = card(page, m.settings.wan_access);
-    await wan.getByRole('switch', { name: m.settings.wan_ssh }).check();
+    await wan.getByRole('switch', { name: m.settings.wan_ssh }).click();
     await expect(wan.getByRole('switch', { name: m.settings.wan_ssh })).not.toBeChecked();
     expect(router.wanAccess).toEqual({ webui: true, ssh: false });
   });
@@ -259,5 +259,27 @@ test.describe('maintenance', () => {
     await accel.getByRole('radio', { name: m.maintenance.offload_hardware }).check();
     await expect.poll(() => router.offload).toBe('hardware');
     await expect(accel.getByText(m.maintenance.offload_note)).toBeVisible();
+  });
+
+  test('limits the CPU, 80% out of the box', async ({ page, router }, testInfo) => {
+    const m = messages(testInfo);
+    const cpu = page.getByRole('region', { name: m.maintenance.cpu_limit, exact: true });
+    await expect(cpu.getByRole('radio', { name: '80%' })).toBeChecked();
+    await expectPageQuality(page);
+    await cpu.getByRole('radio', { name: '30%' }).check();
+    await expect.poll(() => router.cpuLimit).toBe(30);
+    await cpu.getByRole('radio', { name: '100%' }).check();
+    await expect.poll(() => router.cpuLimit).toBe(100);
+  });
+
+  test('keeps the CPU limit when the router refuses a change', async ({ page, router }, testInfo) => {
+    const m = messages(testInfo);
+    router.failNext('cpu_limit_set', { status: 0, data: { error: 'something_new' } });
+    const cpu = page.getByRole('region', { name: m.maintenance.cpu_limit, exact: true });
+    // Clicked, not checked: it goes back to 80% as soon as the router refuses.
+    await cpu.getByRole('radio', { name: '50%' }).click();
+    await expect(page.getByRole('alert')).toBeVisible();
+    await expect(cpu.getByRole('radio', { name: '80%' })).toBeChecked();
+    expect(router.cpuLimit).toBe(80);
   });
 });

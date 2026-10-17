@@ -44,6 +44,7 @@ const STATUS: api.SystemStatus = {
   cpus: 2,
   memory: { total: 512 * 1024 ** 2, available: 384 * 1024 ** 2 },
   storage: { total: 100 * 1024 ** 2, available: 70 * 1024 ** 2 },
+  temperature: { cpu: 52.4, wifi: 47 },
 };
 
 const value = (label: string) => screen.getByText(label).closest('.row')!.querySelector('dd')!.textContent!.trim();
@@ -77,6 +78,7 @@ describe('Overview page', () => {
     expect(value('Up time')).toBe('2 d 3 h');
     expect(value('Load average')).toBe('0.12 / 0.30 / 1.50');
     expect(value('CPU cores')).toBe('2');
+    expect(value('Temperature')).toBe('CPU 52 °C · Wi-Fi 47 °C');
     expect(value('Memory')).toBe('128 MB of 512 MB used');
     expect(screen.getByRole('meter', { name: 'Memory' }).getAttribute('aria-valuetext')).toBe('25%');
     expect(value('Storage')).toBe('30.0 MB of 100 MB used');
@@ -183,5 +185,18 @@ describe('Overview page', () => {
       await waitFor(() => expect(getInternetStatus).toHaveBeenCalled());
       await waitFor(() => expect(topology().textContent!.match(/—/g)?.length).toBe(2));
     });
+  });
+
+  it('shows a dash for a sensor the router does not have, and only a dash without any', async () => {
+    getDeviceInfo.mockResolvedValue(INFO);
+    getSystemStatus.mockResolvedValue({ ...STATUS, temperature: { cpu: 61.6, wifi: null } });
+    const view = render(Overview);
+    await waitFor(() => expect(value('Temperature')).toBe('CPU 62 °C · Wi-Fi —'));
+    view.unmount();
+
+    getSystemStatus.mockResolvedValue({ ...STATUS, temperature: { cpu: null, wifi: null } });
+    render(Overview);
+    await waitFor(() => expect(value('CPU cores')).toBe('2'));
+    expect(value('Temperature')).toBe('—');
   });
 });
