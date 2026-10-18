@@ -17,7 +17,7 @@
 | api | `scripts/smoke-test.sh`; future cases go in `tests/api/` | Calls through `/ubus`: login, ACL enforcement, success and error responses of every `supacudy.*` method | Official OpenWrt rootfs container |
 | web-unit | `web/tests/unit/` | `svelte-check` type check, then components, state and utilities; zh-CN and en i18n keys complete and in sync | Node (Vitest + jsdom) |
 | web-e2e | `web/tests/e2e/`, run by `scripts/test-e2e.sh` | Every page across the matrix below | Playwright (Chromium) against the api test container |
-| emulator | `tests/emulator/` | A fresh QEMU VM of the full system with the emulated network ([docs/emulator.md](../emulator.md)): WAN, LAN clients over DHCP, Wi-Fi association, upstream hotspots visible to the router, UI reachable. Each feature area has a suite (`scenario`, `clients`, `lan`, `wireless`, `internet`, `tethering`, `failover`, `ports`, `dns`, `adguard`, `vpn`, `ovpn`, `tailscale`, `ddns`, `schedule`, `rescue`, `netmode`, `guard`, `system`); `system` runs last because it reboots the VM | QEMU (HVF on macOS, KVM or TCG on Linux) |
+| emulator | `tests/emulator/` | A fresh QEMU VM of the full system with the emulated network ([docs/emulator.md](../emulator.md)): WAN, LAN clients over DHCP, Wi-Fi association, upstream hotspots visible to the router, UI reachable. Each feature area has a suite (`scenario`, `clients`, `lan`, `wireless`, `internet`, `tethering`, `failover`, `ports`, `dns`, `adguard`, `vpn`, `ovpn`, `tailscale`, `ddns`, `schedule`, `rescue`, `netmode`, `guard`, `system`); `system` runs last because it reboots the VM | QEMU (HVF on macOS, KVM or TCG on Linux; on CI a GitHub arm64 runner, with KVM where it has it; without acceleration every wait is ten times longer) |
 | hardware | Checklists in `docs/hardware/` | Wi-Fi, Ethernet ports, USB, buttons and anything else only testable on a real device | Real TR3000, run manually |
 
 ### web-e2e matrix
@@ -35,6 +35,7 @@ Each combination checks: no horizontal scrolling, no missing i18n keys shown as 
 ## Running
 
 - `scripts/test.sh` is the single entry point. It runs lint → web-unit → web-build, then three chains in parallel (build-packages → build → api; web-e2e; emulator-image → emulator, the emulator suites split over two VMs), prints a summary and exits non-zero if anything fails.
+- On GitHub Actions the emulator suites run in their own job on an arm64 runner (`EMULATOR_TESTS_ELSEWHERE=1` keeps them out of the main job), from an image built by an x86 job.
 - While iterating, `tests/emulator/run.sh SUITE...` runs selected emulator suites on one VM; it does not replace the full run before a push.
 - Full logs for each category are written to `out/test-logs/`.
 - When adding a category, wire it into `scripts/test.sh` and update the table above in the same change.

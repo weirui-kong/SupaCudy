@@ -6,6 +6,9 @@
 # (the pre-push hook in .githooks/ runs this script).
 #
 #   scripts/test.sh
+#
+# EMULATOR_TESTS_ELSEWHERE=1 builds the emulator image but leaves its tests
+# to another job: on CI they run on an arm64 runner (see .github/workflows).
 
 set -euo pipefail
 
@@ -58,7 +61,9 @@ emulator_chain() {
 		fi
 	fi
 	run emulator-image "$ROOT/scripts/emulator.sh" image
-	if passed emulator-image; then
+	if [ -n "${EMULATOR_TESTS_ELSEWHERE:-}" ]; then
+		skip emulator "run in another CI job"
+	elif passed emulator-image; then
 		run emulator "$ROOT/tests/emulator/run.sh"
 	else
 		skip emulator "emulator image did not build"

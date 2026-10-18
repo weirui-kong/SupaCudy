@@ -14,6 +14,7 @@
 #   scripts/emulator.sh status
 #   scripts/emulator.sh ssh [cmd]  shell into the VM
 #   scripts/emulator.sh console    follow the serial console log
+#   scripts/emulator.sh accel      print the accelerator QEMU will use: hvf, kvm or tcg
 #
 # QEMU user-mode networking only: no host interfaces, routes or system
 # settings are touched, and the forwarded ports listen on 127.0.0.1 only.
@@ -213,5 +214,6 @@ case "${1:-}" in
 	status) cmd_status ;;
 	ssh) shift; cmd_ssh "$@" ;;
 	console) exec tail -f "$CONSOLE" ;;
+	accel) read -r -a accel <<< "$(accelerator)"; echo "${accel[1]}" ;;
 	*) sed -n '5,15p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 1 ;;
 esac

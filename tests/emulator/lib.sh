@@ -23,11 +23,18 @@ not_ok() { echo "not ok - $*"; FAILED=1; }
 # restarted, instead of waiting forever.
 vm() { "$EMU" ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 "$@"; }
 
-# Runs a check inside the VM, retrying for up to 60 s: radios, DHCP and
-# service reloads settle asynchronously.
+# Without hardware acceleration (an x86 host emulating the arm64 VM) everything
+# runs ten times slower or worse, so every wait is that much longer.
+if [ -z "${EMU_WAIT_SCALE:-}" ]; then
+	EMU_WAIT_SCALE=1
+	[ "$("$EMU" accel)" = tcg ] && EMU_WAIT_SCALE=10
+fi
+
+# Runs a check inside the VM, retrying for up to 60 s (times EMU_WAIT_SCALE):
+# radios, DHCP and service reloads settle asynchronously.
 eventually() {
 	local desc="$1" cmd="$2"
-	for _ in $(seq 30); do
+	for _ in $(seq $((30 * EMU_WAIT_SCALE))); do
 		if vm "$cmd" >/dev/null 2>&1; then
 			ok "$desc"
 			return

@@ -18,11 +18,11 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      - name: Install QEMU for the emulator tests
-        run: sudo apt-get update && sudo apt-get install -y qemu-system-arm qemu-efi-aarch64
-
+      # The emulator suites run in the emulator job, on an arm64 runner.
       - name: Run all tests
         run: scripts/test.sh
+        env:
+          EMULATOR_TESTS_ELSEWHERE: "1"
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -31,6 +31,76 @@ jobs:
           path: |
             out/test-logs/
             web/playwright-report/
+
+  # Builds the emulator image (the ImageBuilder needs x86) for the emulator job.
+  emulator-image:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build packages and the emulator image
+        run: scripts/emulator.sh build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: emulator-image
+          retention-days: 3
+          # The key is throwaway and only opens these test VMs.
+          path: |
+            out/images/emulator/*.img.gz
+            out/emulator/id_ed25519
+            out/emulator/id_ed25519.pub
+
+  # The VM is arm64: on an arm64 runner QEMU can use KVM when the runner
+  # offers it, instead of emulating every instruction on x86.
+  emulator:
+    needs: emulator-image
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install QEMU and the web dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y qemu-system-arm qemu-efi-aarch64
+          npm --prefix web ci --no-audit --no-fund
+
+      - name: Use KVM if the runner has it
+        run: |
+          if [ -e /dev/kvm ]; then
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
+            sudo udevadm control --reload-rules
+            sudo udevadm trigger --name-match=kvm
+          fi
+          ls -l /dev/kvm || true
+          echo "QEMU accelerator: $(scripts/emulator.sh accel)"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: emulator-image
+          path: out
+
+      - name: Run the emulator tests
+        run: |
+          chmod 600 out/emulator/id_ed25519
+          tests/emulator/run.sh 2>&1 | tee emulator.log
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: emulator-logs
+          path: emulator.log
 
   image:
     needs: test
