@@ -30,7 +30,7 @@
 | [features/system.md](features/system.md) | 系统：概要、升级、定时任务、密码、时区、按键、日志、重置、LuCI |
 | [supacudy-mapping.md](supacudy-mapping.md) | 对照 SupaCudy：优先级、OpenWrt 实现方式、我们打算做得不一样的地方 |
 
-截图在 [screenshots/](screenshots/)：`desktop/`（1280×800 各页面）、`mobile/`（390×844）、`details/`（弹窗、下拉菜单、二级视图）、`themes/`（暗色、经典主题）、`zh-cn/`（简体中文界面）。
+调研时截取的界面截图版权属于 GL.iNet，不放进本仓库。
 
 ## 方法和隐私处理
 

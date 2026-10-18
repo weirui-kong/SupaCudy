@@ -2,8 +2,6 @@
 
 ## 概要
 
-![概要](../screenshots/desktop/20-overview.jpg)
-
 | 卡片 | 内容 |
 |---|---|
 | CPU 平均负载 | 最近 3 分钟折线图，标注单核 / 多核 |
@@ -14,14 +12,10 @@
 
 ## 升级
 
-![升级](../screenshots/desktop/21-upgrade.jpg)
-
 - 在线升级：显示是否最新，以及当前版本、固件类型、编译时间。
 - 本地升级：拖放上传，支持 .bin / .img / .zip / .tar / .gz。
 
 ## 定时任务
-
-![定时任务](../screenshots/desktop/22-scheduled-tasks.jpg)
 
 三组独立的定时，各自带"应用"按钮：
 
@@ -41,13 +35,9 @@
 
 ## 按键设置
 
-![按键设置](../screenshots/desktop/25-toggle-button.jpg)
-
 图示拨动开关左右两个位置，功能可选：无 / OpenVPN 客户端开关 / WireGuard 客户端开关。简体中文界面下隐藏（因为选项只有 VPN）。
 
 ## 日志
-
-![日志](../screenshots/desktop/26-log.jpg)
 
 标签页：系统日志、内核日志、崩溃日志、云日志、Nginx 日志；右上角"导出日志"，内容区"刷新"。截图中日志内容已模糊处理。
 

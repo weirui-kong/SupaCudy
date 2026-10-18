@@ -2,8 +2,6 @@
 
 ## 防火墙
 
-![防火墙](../screenshots/desktop/11-firewall.jpg)
-
 三个标签页：
 
 | 标签 | 内容 |
@@ -12,11 +10,7 @@
 | 路由器开放端口 | 让路由器自身的服务（Web、FTP 等）可从外网访问，规则列表 + "添加" |
 | DMZ | 启用开关 + DMZ 主机 IP（下拉选已知客户端）；提示开启 DMZ 后端口转发和开放端口规则都失效 |
 
-![添加端口转发](../screenshots/details/firewall-add-port-forward.jpg)
-
 ## 多 WAN
-
-![多 WAN](../screenshots/desktop/12-multi-wan.jpg)
 
 ### 接口状态检测
 
@@ -31,8 +25,6 @@
 | 判定恢复 | 连续 ping 成功 N 次（默认 8） |
 | IPv4 检测 IP | 多个 |
 
-![检测设置](../screenshots/details/multi-wan-tracking.jpg)
-
 ### 模式
 
 - 故障转移（默认）：自动选择可用接口中优先级最高的。
@@ -42,8 +34,6 @@
 
 ## LAN
 
-![LAN](../screenshots/desktop/13-lan.jpg)
-
 两个标签页：私有网络、访客网络。
 
 - 简单视图：路由器 IP（只让改第三段，`192.168.[x].1`）、最大用户数、起始 / 结束 IP。
@@ -52,8 +42,6 @@
 - 访客网络有独立的网关和地址池设置，没有地址保留。
 
 ## DNS
-
-![DNS](../screenshots/desktop/14-dns.jpg)
 
 | 设置 | 说明 |
 |---|---|
@@ -65,11 +53,7 @@
 | 模式：DNS 代理 | 填代理服务器地址 |
 | 编辑 Hosts | 弹窗里的多行编辑器，静态解析优先于上游 DNS |
 
-![加密 DNS](../screenshots/details/dns-encrypted-mode.jpg)
-
 ## 网络模式
-
-![网络模式](../screenshots/desktop/15-network-mode.jpg)
 
 四个大单选卡片：路由器（默认）、AP、中继（Extender）、WDS，每个带一句说明。顶部警告：切换后客户端要重连，切到 AP / 中继 / WDS 后可能无法再访问此页，长按复位键 4 秒可恢复为路由模式。
 

@@ -4,13 +4,9 @@ VPN 是 GL 最有特色的部分：把"客户端 / 服务端 × WireGuard / Open
 
 ## VPN 仪表盘
 
-![VPN 仪表盘](../screenshots/desktop/04-vpn-dashboard.jpg)
-
 上下两张卡片：VPN 客户端、VPN 服务端。每张卡片列出 OpenVPN 和 WireGuard 两行，未配置时显示"立即设置"，跳到对应的客户端 / 服务端页。
 
 ### 代理模式（客户端卡片上的"全局代理 ⇄"）
-
-![代理模式](../screenshots/details/vpn-proxy-mode.jpg)
 
 | 分类 | 模式 | 含义 |
 |---|---|---|
@@ -22,8 +18,6 @@ VPN 是 GL 最有特色的部分：把"客户端 / 服务端 × WireGuard / Open
 | 路由模式 | 自定义路由规则 | 为每个客户端实例手动配置路由（可同时多个实例） |
 
 ### 客户端全局选项
-
-![客户端全局选项](../screenshots/details/vpn-client-global-options.jpg)
 
 | 选项 | 作用 |
 |---|---|
@@ -37,21 +31,15 @@ VPN 是 GL 最有特色的部分：把"客户端 / 服务端 × WireGuard / Open
 
 ## WireGuard 客户端
 
-![WireGuard 客户端](../screenshots/desktop/05-wireguard-client.jpg)
-
 - 首屏是"从 VPN 提供商获取配置文件"，列出内置的提供商（本机：AzireVPN、Mullvad），下方"手动添加"。
 - 配置按"提供商分组"组织：左栏分组列表，右栏上传区（支持 .zip / .tar / .gz / .conf / .txt，可拖放）和"手动添加配置"。
 - **点"手动添加"会立即创建一个默认名为 New Provider 的分组并保存**，然后才让你改名。这次观察就因此在设备上留下了一个空分组。
-
-![新建分组](../screenshots/details/wireguard-client-new-group.jpg)
 
 ## OpenVPN 客户端
 
 结构与 WireGuard 客户端相同；内置提供商是 NordVPN。
 
 ## WireGuard 服务端
-
-![WireGuard 服务端](../screenshots/desktop/06-wireguard-server.jpg)
 
 空状态给出四步引导：生成配置 → 添加节点 → 把节点信息复制到客户端 → 回仪表盘启动。只有一个主按钮"生成配置"（会生成密钥并写入配置，本次没有点）。
 

@@ -1,7 +1,5 @@
 # 无线
 
-![无线页](../screenshots/desktop/02-wireless.jpg)
-
 ## 结构
 
 按射频和用途分标签页：本机只有"2.4GHz WiFi"和"2.4GHz 访客 WiFi"两个。双频机型上应该还有 5GHz 对应的两个标签（未在本机观察）。

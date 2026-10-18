@@ -2,23 +2,17 @@
 
 ## 软件包（Plug-ins）
 
-![软件包](../screenshots/desktop/09-plugins.jpg)
-
 - 就是 opkg 的图形界面：搜索框 + 分类筛选 + A–Z 字母索引，列表显示名称、版本、大小和"安装"按钮。
 - 右上角"管理软件源"，列表上方"刷新"（更新软件包索引，较慢，期间显示"列表正在刷新，请稍候"）。
 - 没有对普通用户友好的"应用商店"层：用户直接面对 `6in4`、`acl` 这类底层包名。
 
 ## 动态 DNS
 
-![动态 DNS](../screenshots/desktop/29-dynamic-dns.jpg)
-
 - 使用 GL 自己的 DDNS 服务，主机名由设备 ID 生成，不可改，只有一个启用开关。
 - 提示 DNS 记录同步最长有 10 分钟延迟，并提供"DDNS 测试"链接。
 - 简体中文界面下隐藏。
 
 ## GoodCloud
-
-![GoodCloud](../screenshots/desktop/10-goodcloud.jpg)
 
 GL 的云管理平台。页面显示绑定账号和绑定时间（可解绑），以及：
 
