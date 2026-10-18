@@ -1,18 +1,60 @@
 # 开发指南
 
+相关文档：[架构](architecture.md)、[模拟器](emulator.md)、[项目规则](rules/)、[贡献指南](../CONTRIBUTING.md)。
+
 ## 需要的工具
 
 - Docker（macOS 上用 Docker Desktop）。OpenWrt 官方的 SDK 和 ImageBuilder 镜像只有 amd64 版本，在 Apple Silicon 上会通过模拟运行，速度慢一些，但能用。
-- 一台运行 OpenWrt 24.10 的 TR3000，或者以后加上的 QEMU 虚拟机，用来调试。
+- Node.js 24。
+- shellcheck（`brew install shellcheck`，Linux 上 `apt install shellcheck`），lint 测试需要。
+- QEMU（`brew install qemu`），模拟器需要。
+- 调试真机时，一台刷了 SupaCudy 或 OpenWrt 24.10 的 TR3000。
 
 ## 第一次克隆后
 
 ```bash
 git config core.hooksPath .githooks   # 启用 pre-push 钩子：push 前自动跑全部测试
-brew install shellcheck               # lint 测试需要（Linux 上用 apt install shellcheck）
+npm --prefix web ci                   # 前端依赖
 ```
 
-项目规则（产品、编码、测试、协作）见 [CLAUDE.md](../CLAUDE.md) 和 [docs/rules/](rules/)。
+## 构建固件
+
+```bash
+scripts/build-packages.sh                      # 用官方 OpenWrt SDK 打出三个 .ipk，在 out/packages/
+scripts/build-image.sh cudy-tr3000-256mb-v1    # 用官方 ImageBuilder 打出固件
+```
+
+固件在 `out/images/cudy-tr3000-256mb-v1/`，文件名以 `-squashfs-sysupgrade.bin` 结尾，旁边的 `sha256sums` 用来校验。刷机方法见 [hardware/flashing-tr3000.md](hardware/flashing-tr3000.md)。
+
+- `build-packages.sh` 在官方 SDK 镜像里只编译 `supacudy` feed 下的包。
+- `build-image.sh` 把 `out/packages/` 里的包放进 ImageBuilder，和 `profiles/common.conf` 加设备配置里列出的官方包一起打成固件。
+- 升级 OpenWrt 底座：改 `config/openwrt.env` 里的版本号，重新跑上面两条命令。
+
+## 目录结构
+
+```
+config/       OpenWrt 版本和镜像源
+profiles/     每种设备的构建配置，common.conf 是公共软件包清单
+packages/     三个软件包：supacudy-base（首次启动配置和系统脚本）、
+              supacudy-rpcd（ucode 写的 API 和权限配置）、supacudy-ui（编译好的前端）
+web/          前端源码（Svelte + TypeScript）
+emulator/     模拟器里的虚拟网络
+patches/      预留：需要改 OpenWrt 本身时，以补丁形式放这里
+scripts/      构建、测试和部署脚本
+tests/        按类别分的测试
+docs/         文档；docs/rules/ 是项目规则
+```
+
+## 模拟器
+
+不需要路由器，在本机跑一台带虚拟 Wi-Fi、上级热点和客户端的完整路由器：
+
+```bash
+scripts/emulator.sh build && scripts/emulator.sh start   # 打开 http://127.0.0.1:8088/supacudy/
+scripts/emulator.sh deploy                                # 把工作区的改动推进虚拟机
+```
+
+详见 [emulator.md](emulator.md)。
 
 ## 加速和本机配置
 
@@ -37,17 +79,6 @@ scripts/test.sh
 
 运行 lint → web-unit → 前端构建，再并行运行打包 → build → api、web-e2e 和模拟器，最后输出汇总。任何一项失败都不能 push。分类和要求见 [docs/rules/testing.md](rules/testing.md)，每一项的完整日志在 `out/test-logs/`。
 
-## 打包
-
-```bash
-scripts/build-packages.sh               # packages/ → out/packages/*.ipk
-scripts/build-image.sh cudy-tr3000-256mb-v1   # → out/images/cudy-tr3000-256mb-v1/
-```
-
-- `build-packages.sh` 在官方 SDK 镜像里只编译 `supacudy` feed 下的包。
-- `build-image.sh` 把 `out/packages/` 里的包放进 ImageBuilder，和 `profiles/common.conf` 加设备配置里列出的官方包一起打成固件。
-- 升级 OpenWrt 底座：改 `config/openwrt.env` 里的版本号，重新跑上面两条命令。
-
 ## 在容器里验证（不需要路由器）
 
 ```bash
@@ -58,7 +89,7 @@ scripts/smoke-test.sh --keep   # 保留容器，浏览器打开 http://localhost
 它会启动同版本的官方 OpenWrt rootfs 容器（Apple Silicon 上用 arm64 版，原生运行；x86 机器和 CI 上用 x86-64 版），装上 `out/packages/` 里的包，手动拉起 ubusd、rpcd、uhttpd，然后检查：
 
 - `/supacudy/` 页面能访问；
-- 错误密码登录被拒绝，正确密码能拿到会话；
+- `/ubus` 上的匿名登录被关闭，通过登录接口（`/cgi-bin/supacudy-login`）用错误密码登录被拒绝，正确密码能拿到会话；
 - `supacudy.info` 返回正确的版本信息；
 - 未登录调用 `supacudy.info` 被拒绝。
 
@@ -67,7 +98,7 @@ scripts/smoke-test.sh --keep   # 保留容器，浏览器打开 http://localhost
 ## 不刷机调试
 
 ```bash
-scripts/deploy-dev.sh root@192.168.1.1
+scripts/deploy-dev.sh root@192.168.200.1
 ```
 
 它会把三个包的文件直接拷到路由器上并重启 rpcd，几秒钟生效。注意：
@@ -98,18 +129,18 @@ rpcd
 ```bash
 cd web
 npm ci                     # 第一次
-npm run dev                # 开发服务器，/ubus 代理到 http://localhost:8080
+npm run dev                # 开发服务器，/ubus 和 /cgi-bin 代理到 http://localhost:8080
 npm test                   # svelte-check 类型检查 + 单元测试
 npm run build              # 只构建前端
 ```
 
-开发服务器默认把 API 请求代理到 `scripts/smoke-test.sh --keep` 启动的容器（登录密码 `supacudy-test`）。要连真机，设置 `SUPACUDY_TARGET=http://192.168.1.1 npm run dev`。
+开发服务器默认把 API 请求代理到 `scripts/smoke-test.sh --keep` 启动的容器（登录密码 `supacudy-test`）。要连真机，设置 `SUPACUDY_TARGET=http://192.168.200.1 npm run dev`。
 
 目录约定：
 
 | 路径 | 内容 |
 |---|---|
-| `src/lib/api.ts` | 唯一和路由器通信的模块：会话、错误映射、每个接口的类型化封装 |
+| `src/lib/api/` | 唯一和路由器通信的模块：`core.ts` 负责会话和错误映射，其余文件按功能提供类型化的接口封装 |
 | `src/lib/i18n/` | `en.ts` 是词条的唯一来源，`zh-CN.ts` 必须同形（类型保证），`t()` 取词条 |
 | `src/lib/theme.svelte.ts` | 系统 / 亮色 / 暗色偏好，存在 localStorage |
 | `src/lib/router.svelte.ts` | hash 路由和导航项 |
