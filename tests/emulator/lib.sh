@@ -19,16 +19,24 @@ ok()     { echo "ok - $*"; }
 # shellcheck disable=SC2034 # read by run.sh
 not_ok() { echo "not ok - $*"; FAILED=1; }
 
-# Keepalives end a session whose connection died while the VM's network
-# restarted, instead of waiting forever.
-vm() { "$EMU" ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 "$@"; }
-
-# Without hardware acceleration (an x86 host emulating the arm64 VM) everything
-# runs ten times slower or worse, so every wait is that much longer.
+# Without hardware acceleration (an x86 or arm64 host emulating the VM
+# instruction by instruction) everything is several times slower: waits are
+# EMU_WAIT_SCALE times longer, ubus calls get the same longer timeout, and a
+# failed check is tried again a few times before it counts.
 if [ -z "${EMU_WAIT_SCALE:-}" ]; then
 	EMU_WAIT_SCALE=1
 	[ "$("$EMU" accel)" = tcg ] && EMU_WAIT_SCALE=10
 fi
+UBUS_SLOW=""
+[ "$EMU_WAIT_SCALE" -gt 1 ] && UBUS_SLOW="ubus() { command ubus -t $((30 * EMU_WAIT_SCALE)) \"\$@\"; }; "
+
+# Keepalives end a session whose connection died while the VM's network
+# restarted, instead of waiting forever.
+# ssh joins its arguments into one command line, so the ubus wrapper goes first.
+vm() {
+	"$EMU" ssh -o BatchMode=yes -o ConnectTimeout=$((10 * EMU_WAIT_SCALE)) -o ServerAliveInterval=5 -o ServerAliveCountMax=3 \
+		"$UBUS_SLOW" "$@"
+}
 
 # Runs a check inside the VM, retrying for up to 60 s (times EMU_WAIT_SCALE):
 # radios, DHCP and service reloads settle asynchronously.
@@ -47,5 +55,10 @@ eventually() {
 
 check() {
 	local desc="$1" cmd="$2"
-	if vm "$cmd" >/dev/null 2>&1; then ok "$desc"; else not_ok "$desc"; vm "$cmd" 2>&1 | sed 's/^/    | /' || true; fi
+	for _ in $(seq $((EMU_WAIT_SCALE > 1 ? 3 : 1))); do
+		if vm "$cmd" >/dev/null 2>&1; then ok "$desc"; return; fi
+		[ "$EMU_WAIT_SCALE" = 1 ] || sleep $((2 * EMU_WAIT_SCALE))
+	done
+	not_ok "$desc"
+	vm "$cmd" 2>&1 | sed 's/^/    | /' || true
 }

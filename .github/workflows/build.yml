@@ -91,7 +91,9 @@ jobs:
           name: emulator-image
           path: out
 
+      # shell: bash adds pipefail, so a failure is not lost in the pipe to tee.
       - name: Run the emulator tests
+        shell: bash
         run: |
           chmod 600 out/emulator/id_ed25519
           tests/emulator/run.sh 2>&1 | tee emulator.log
