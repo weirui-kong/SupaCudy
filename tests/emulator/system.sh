@@ -98,8 +98,10 @@ eventually "a program started outside the services is moved under the limit" \
 check "a limit that is not offered is rejected as invalid" "! ubus call supacudy cpu_limit_set '{\"limit\":42}'"
 check "the limit is set to 30%" "$(cpu_limit 30)"
 eventually "the cap follows" "$(cpu_max_for 30)"
-check "two busy programs get 30% of the CPU together" "[ \$($BUSY_USAGE) -le 65 ]"
-check "without a limit they get both cores" "$(cpu_limit 100) && sleep 2 && grep -qx 'max 100000' $CPU_MAX && [ \$($BUSY_USAGE) -ge 150 ]"
+# shellcheck disable=SC2034 # read by timed() in lib.sh
+TIMED_REASON="measures CPU time"
+timed check "two busy programs get 30% of the CPU together" "[ \$($BUSY_USAGE) -le 65 ]"
+timed check "without a limit they get both cores" "$(cpu_limit 100) && sleep 2 && grep -qx 'max 100000' $CPU_MAX && [ \$($BUSY_USAGE) -ge 150 ]"
 check "the limit is back at 80%" "$(cpu_limit 80)"
 eventually "the cap follows again" "$(cpu_max_for 80)"
 if rpc 00000000000000000000000000000000 supacudy cpu_limit_set '{"limit":100}' | grep -q '"code":-32002'; then

@@ -53,6 +53,19 @@ eventually() {
 	vm "$cmd" 2>&1 | sed 's/^/    | /' || true
 }
 
+# For checks that count the product's own probes (1 s pings, 2 s DHCP tries)
+# or measure CPU time: emulated without acceleration they cannot pass
+# reliably, so there they are reported as skipped, with the suite's
+# TIMED_REASON. The pre-push hook runs them on HVF or KVM.
+#   timed check|eventually "description" "command"
+timed() {
+	if [ "$EMU_WAIT_SCALE" -gt 1 ]; then
+		echo "ok - $2 # SKIP without hardware acceleration: ${TIMED_REASON:-depends on real-time behaviour}"
+	else
+		"$@"
+	fi
+}
+
 check() {
 	local desc="$1" cmd="$2"
 	for _ in $(seq $((EMU_WAIT_SCALE > 1 ? 3 : 1))); do

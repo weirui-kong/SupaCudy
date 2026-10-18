@@ -15,6 +15,10 @@ PHONE="ip netns exec phone"
 AP='{"mode":"ap","ipaddr":"10.250.2.50","netmask":"255.255.255.0","gateway":"10.250.2.2","dns":["10.250.2.3"]}'
 ROUTER='{"mode":"router","ipaddr":"","netmask":"","gateway":"","dns":[]}'
 # The bracket keeps pgrep from matching the shell running the check.
+# The watcher counts DHCP probes with 2 s timeouts, which emulation without
+# acceleration misses now and then.
+# shellcheck disable=SC2034 # read by timed() in lib.sh
+TIMED_REASON="counts the watcher's DHCP probes"
 RENEW_LAPTOP="pid=\$(pgrep -f '[h]ostname:Work-Laptop'); kill -USR2 \$pid; sleep 1; kill -USR1 \$pid"
 
 check "the watcher runs and is quiet while all is well" \
@@ -23,16 +27,16 @@ check "the watcher runs and is quiet while all is well" \
 check "access point mode is set up" "ubus call supacudy netmode_set '$AP' | grep -q applied"
 eventually "the main router answers DHCP" "uci -q get supacudy.netmode.mode | grep -qx ap && $TICK && grep -q '\"dhcp_misses\": *0' $STATE"
 check "the uci configuration is saved for comparison" "uci export network > /tmp/net.before; uci export dhcp > /tmp/dhcp.before; uci export wireless > /tmp/wifi.before"
-check "the main router disappears" "ip link set eth0 down"
-check "one missed probe is not enough" "$TICK && ! ip -4 addr show br-lan | grep -q 192.168.200.1"
-check "the second one starts rescue DHCP" \
+timed check "the main router disappears" "ip link set eth0 down"
+timed check "one missed probe is not enough" "$TICK && ! ip -4 addr show br-lan | grep -q 192.168.200.1"
+timed check "the second one starts rescue DHCP" \
 	"$TICK && ip -4 addr show br-lan | grep -q 'inet 192.168.200.1/24' && pgrep -f '[r]escue-dnsmasq.pid' &&
 	 ubus call supacudy rescue_get | grep -q '\"address\": \"192.168.200.1\"'"
-eventually "the laptop gets a rescue address and opens the admin page" \
+timed eventually "the laptop gets a rescue address and opens the admin page" \
 	"$RENEW_LAPTOP; sleep 3; $LAPTOP ip -4 addr show eth0 | grep -q 'inet 192.168.200.' &&
 	 $LAPTOP uclient-fetch -q -O - http://192.168.200.1/supacudy/ | grep -q '<title>SupaCudy'"
-check "the main router comes back" "ip link set eth0 up && sleep 5"
-check "rescue mode ends after two good checks" \
+timed check "the main router comes back" "ip link set eth0 up && sleep 5"
+timed check "rescue mode ends after two good checks" \
 	"$TICK && $TICK && grep -q '\"active\": *false' $STATE && ! ip -4 addr show br-lan | grep -q 192.168.200.1 &&
 	 ! pgrep -f '[r]escue-dnsmasq.pid'"
 check "the saved configuration is untouched" \
@@ -41,24 +45,24 @@ check "the saved configuration is untouched" \
 check "router mode is restored" "ubus call supacudy netmode_set '$ROUTER' | grep -q applied"
 eventually "the LAN is back on its own address" "ip -4 addr show br-lan | grep -q 'inet 192.168.200.1/24 brd' && [ ! -e /sys/class/net/eth0/master ]"
 
-check "Wi-Fi is off and no cable is plugged in" "
+timed check "Wi-Fi is off and no cable is plugged in" "
 	uci set wireless.radio0.disabled=1 && uci set wireless.radio1.disabled=1 && uci commit wireless && wifi reload && sleep 8 &&
 	$LAPTOP ip link set eth0 down && ip netns exec nas ip link set eth0 down"
-check "nothing happens before the third check" "$TICK && $TICK && ! iw dev sc-rescue info 2>/dev/null"
-check "the third check starts the rescue network" \
+timed check "nothing happens before the third check" "$TICK && $TICK && ! iw dev sc-rescue info 2>/dev/null"
+timed check "the third check starts the rescue network" \
 	"$TICK && ubus call supacudy rescue_get | grep -q '\"ssid\": \"SupaCudy-Rescue\"'"
-eventually "the open rescue network is on the air" "iw dev sc-rescue info | grep -q 'ssid SupaCudy-Rescue'"
-check "a phone tries to join the open rescue network" "
+timed eventually "the open rescue network is on the air" "iw dev sc-rescue info | grep -q 'ssid SupaCudy-Rescue'"
+timed check "a phone tries to join the open rescue network" "
 	$PHONE iw dev ph1 del 2>/dev/null; phy=\$($PHONE iw dev ph0 info | sed -n 's/.*wiphy \\([0-9]*\\).*/phy\\1/p') && $PHONE iw phy \$phy interface add ph1 type managed &&
 	printf 'network={\\n ssid=\"SupaCudy-Rescue\"\\n key_mgmt=NONE\\n}\\n' > /tmp/rescue-wpa.conf &&
 	$PHONE wpa_supplicant -B -i ph1 -c /tmp/rescue-wpa.conf -P /tmp/rescue-wpa.pid >/dev/null"
 # Association takes a few seconds on the emulated radio.
-eventually "the phone is associated with the rescue network" "$PHONE iw dev ph1 link | grep -q 'SSID: SupaCudy-Rescue'"
-check "the phone gets an address from the rescue network" \
+timed eventually "the phone is associated with the rescue network" "$PHONE iw dev ph1 link | grep -q 'SSID: SupaCudy-Rescue'"
+timed check "the phone gets an address from the rescue network" \
 	"$PHONE udhcpc -i ph1 -n -q -t 10 -s /bin/true 2>&1 | grep -q 'obtained from 192.168.200.1'"
-check "the phone's extra interface is removed" "kill \$(cat /tmp/rescue-wpa.pid); $PHONE iw dev ph1 del"
-check "cables and Wi-Fi come back" "
+timed check "the phone's extra interface is removed" "kill \$(cat /tmp/rescue-wpa.pid); $PHONE iw dev ph1 del"
+timed check "cables and Wi-Fi come back" "
 	$LAPTOP ip link set eth0 up && ip netns exec nas ip link set eth0 up &&
 	uci -q delete wireless.radio0.disabled; uci -q delete wireless.radio1.disabled; uci commit wireless && wifi reload && sleep 10"
-check "the rescue network goes away" "$TICK && $TICK && ! iw dev sc-rescue info 2>/dev/null && grep -q '\"active\": *false' $STATE"
+timed check "the rescue network goes away" "$TICK && $TICK && ! iw dev sc-rescue info 2>/dev/null && grep -q '\"active\": *false' $STATE"
 check "the watcher is started again" "/etc/init.d/supacudy-rescue start && sleep 1 && pgrep -f '[r]escue-watch'"

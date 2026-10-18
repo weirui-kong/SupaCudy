@@ -34,6 +34,10 @@ block_v6() {
 	echo "$cmd"
 }
 UNBLOCK="nft delete table inet emu_fault 2>/dev/null; true"
+# The watcher counts pings with a 1 s timeout, which emulation without
+# acceleration misses now and then.
+# shellcheck disable=SC2034 # read by timed() in lib.sh
+TIMED_REASON="counts the watcher's 1 s probes"
 
 check "Ethernet gets the base metric that keeps it ahead of the other uplinks" \
 	"[ \"\$(uci get network.wan.metric)\" = 10 ] && ip route show default | grep -q 'dev eth0 .*metric 10'"
@@ -68,52 +72,52 @@ check "the internet status reports Ethernet from the watcher" \
 eventually "tethering is a working standby for IPv4 and IPv6" \
 	"$TICK && [ \"\$(jsonfilter -i $STATE -e @.uplinks.tethering.v4.ok)\" = true ] &&
 	 [ \"\$(jsonfilter -i $STATE -e @.uplinks.tethering.v6.ok)\" = true ]"
-check "a connection through Ethernet is open" \
+timed check "a connection through Ethernet is open" \
 	"($LAPTOP ping -c 40 -i 0.5 10.250.2.2 >/dev/null 2>&1 </dev/null &) ; sleep 2;
 	 conntrack -L -p icmp --reply-dst 10.250.2.15 2>/dev/null | grep -q 'dst=10.250.2.2'"
-check "Ethernet stops reaching the internet" "$(block eth0)"
-check "two failed checks are not enough to switch" "$(ticks 2) && $(active wired wired)"
-check "the third one switches IPv4 and IPv6 to tethering" \
+timed check "Ethernet stops reaching the internet" "$(block eth0)"
+timed check "two failed checks are not enough to switch" "$(ticks 2) && $(active wired wired)"
+timed check "the third one switches IPv4 and IPv6 to tethering" \
 	"$TICK && $(active tethering tethering) && ip -4 route show default proto 99 | grep -q 'dev usb0 .*metric 5' &&
 	 ip -6 route show default proto 99 | grep -q 'dev usb0'"
-check "connections through Ethernet were reset" \
+timed check "connections through Ethernet were reset" \
 	"! conntrack -L -p icmp --reply-dst 10.250.2.15 2>/dev/null | grep -q 'dst=10.250.2.2'"
-check "the LAN drops Ethernet's prefix and uses NAT66 on tethering" \
+timed check "the LAN drops Ethernet's prefix and uses NAT66 on tethering" \
 	"[ \"\$(uci get network.lan.ip6class)\" = local ] &&
 	 nft list table ip6 supacudy_nat66 | grep -q 'oifname \"usb0\" ip6 saddr fc00::/7 masquerade'"
-eventually "the laptop stops using the old prefix" \
+timed eventually "the laptop stops using the old prefix" \
 	"$LAPTOP ip -6 addr show dev eth0 | grep -A1 'inet6 2001:db8:250:' | grep -q 'preferred_lft 0sec'"
-eventually "the laptop reaches the internet through tethering over IPv4 and IPv6" \
+timed eventually "the laptop reaches the internet through tethering over IPv4 and IPv6" \
 	"$LAPTOP ping -c1 -W2 10.250.42.2 && $LAPTOP ping -6 -c1 -W2 2001:db8:42::2"
-check "the internet status reports tethering" \
+timed check "the internet status reports tethering" \
 	"ubus call supacudy internet_status | jsonfilter -e @.active | grep -qx tethering"
 
-check "Ethernet works again" "$UNBLOCK"
-check "four good checks are not enough to switch back" "$(ticks 4) && $(active tethering tethering)"
-check "the fifth one switches back and restores the LAN" \
+timed check "Ethernet works again" "$UNBLOCK"
+timed check "four good checks are not enough to switch back" "$(ticks 4) && $(active tethering tethering)"
+timed check "the fifth one switches back and restores the LAN" \
 	"$TICK && $(active wired wired) && ip -4 route show default proto 99 | grep -q 'dev eth0' &&
 	 ! uci -q get network.lan.ip6class && ! nft list table ip6 supacudy_nat66 && [ ! -e /etc/supacudy/failover-orig.json ]"
-eventually "the laptop uses Ethernet's prefix again" \
+timed eventually "the laptop uses Ethernet's prefix again" \
 	"$LAPTOP ip -6 addr show dev eth0 | grep -A1 'inet6 2001:db8:250:' | grep -qv 'preferred_lft 0sec'"
 
-check "resetting connections is turned off" \
+timed check "resetting connections is turned off" \
 	"ubus call supacudy uplinks_set '{\"order\":[\"wired\",\"repeater\",\"tethering\"],\"reset_connections\":false,$TARGETS}' | grep -q applied"
-check "without the reset, connections through Ethernet survive a switch" \
+timed check "without the reset, connections through Ethernet survive a switch" \
 	"($LAPTOP ping -c 40 -i 0.5 10.250.2.2 >/dev/null 2>&1 </dev/null &) ; sleep 2; $(block eth0) && $(ticks 3) && $(active tethering tethering) &&
 	 conntrack -L -p icmp --reply-dst 10.250.2.15 2>/dev/null | grep -q 'dst=10.250.2.2'"
-check "back to Ethernet" "$UNBLOCK && $(ticks 5) && $(active wired wired)"
+timed check "back to Ethernet" "$UNBLOCK && $(ticks 5) && $(active wired wired)"
 
-check "IPv6 stops working everywhere while IPv4 keeps working" "$(block_v6 eth0 usb0) && $(ticks 3) && $(active wired '')"
-check "the router stops offering itself as IPv6 gateway" \
+timed check "IPv6 stops working everywhere while IPv4 keeps working" "$(block_v6 eth0 usb0) && $(ticks 3) && $(active wired '')"
+timed check "the router stops offering itself as IPv6 gateway" \
 	"[ \"\$(uci get dhcp.lan.ra_lifetime)\" = 0 ] && ! ip -6 route show default proto 99 | grep -q ."
-eventually "the laptop drops its IPv6 default route" "! $LAPTOP ip -6 route | grep -q default"
-check "IPv6 comes back" "$UNBLOCK && $(ticks 5) && $(active wired wired) && ! uci -q get dhcp.lan.ra_lifetime"
-eventually "the laptop gets its IPv6 default route back" "$LAPTOP ip -6 route | grep -q default"
+timed eventually "the laptop drops its IPv6 default route" "! $LAPTOP ip -6 route | grep -q default"
+timed check "IPv6 comes back" "$UNBLOCK && $(ticks 5) && $(active wired wired) && ! uci -q get dhcp.lan.ra_lifetime"
+timed eventually "the laptop gets its IPv6 default route back" "$LAPTOP ip -6 route | grep -q default"
 
-check "tethering is put first" \
+timed check "tethering is put first" \
 	"ubus call supacudy uplinks_set '{\"order\":[\"tethering\",\"wired\",\"repeater\"],\"reset_connections\":true,$TARGETS}' | grep -q applied &&
 	 $TICK && $(active tethering tethering)"
-check "the original order is restored" \
+timed check "the original order is restored" \
 	"ubus call supacudy uplinks_set '{\"order\":[\"wired\",\"repeater\",\"tethering\"],\"reset_connections\":true,$TARGETS}' | grep -q applied &&
 	 $TICK && $(active wired wired)"
 
