@@ -7,8 +7,10 @@
 
 eventually "WAN has an address from the QEMU network" \
 	"ip -4 addr show dev eth0 | grep -q 'inet 10.250.2.'"
-eventually "WAN reaches the internet" \
-	"ping -c1 -W3 1.1.1.1"
+# The WAN side is QEMU's NAT, whose gateway always answers; pinging the real
+# internet would make the test depend on the host's network.
+eventually "WAN reaches its gateway" \
+	"ping -c1 -W3 10.250.2.2"
 eventually "LAN is 192.168.200.1/24, outside the developer's ranges" \
 	"ip -4 addr show dev br-lan | grep -q 'inet 192.168.200.1/24'"
 
@@ -29,8 +31,8 @@ eventually "upstream offers Hotel-WiFi and Cafe-Free" \
 	"ip netns exec upstream iw dev | grep -q 'ssid Hotel-WiFi' && ip netns exec upstream iw dev | grep -q 'ssid Cafe-Free'"
 eventually "router scan sees both upstream hotspots" \
 	"ubus call iwinfo scan '{\"device\":\"phy0-ap0\"}' | grep -q '\"Hotel-WiFi\"' && ubus call iwinfo scan '{\"device\":\"phy0-ap0\"}' | grep -q '\"Cafe-Free\"'"
-eventually "upstream reaches the internet through the uplink" \
-	"ip netns exec upstream ping -c1 -W3 1.1.1.1"
+eventually "upstream reaches the WAN gateway through the uplink" \
+	"ip netns exec upstream ping -c1 -W3 10.250.2.2"
 
 eventually "SupaCudy UI is served" \
 	"wget -q -O - http://127.0.0.1/supacudy/ | grep -q '<title>SupaCudy</title>'"

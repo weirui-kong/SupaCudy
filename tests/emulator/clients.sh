@@ -25,15 +25,15 @@ check "an unknown device type is rejected" \
 check "a malformed MAC is rejected" \
 	"! ubus call supacudy client_block '{\"mac\":\"not-a-mac\",\"blocked\":true}'"
 
-check "the laptop reaches the internet before blocking" "$IN_LAPTOP ping -c1 -W3 1.1.1.1"
+check "the laptop reaches the internet before blocking" "$IN_LAPTOP ping -c1 -W3 10.250.2.2"
 check "blocking cuts the laptop off the internet" \
-	"ubus call supacudy client_block '{\"mac\":\"$LAPTOP\",\"blocked\":true}' && ! $IN_LAPTOP ping -c1 -W3 1.1.1.1"
+	"ubus call supacudy client_block '{\"mac\":\"$LAPTOP\",\"blocked\":true}' && ! $IN_LAPTOP ping -c1 -W3 10.250.2.2"
 check "a blocked laptop still reaches the router" \
 	"$IN_LAPTOP wget -q -O /dev/null -T 5 http://192.168.200.1/supacudy/"
 check "blocking survives a policy reload" \
-	"/etc/init.d/supacudy reload && ! $IN_LAPTOP ping -c1 -W3 1.1.1.1"
+	"/etc/init.d/supacudy reload && ! $IN_LAPTOP ping -c1 -W3 10.250.2.2"
 check "unblocking restores internet access" \
-	"ubus call supacudy client_block '{\"mac\":\"$LAPTOP\",\"blocked\":false}' && $IN_LAPTOP ping -c1 -W3 1.1.1.1"
+	"ubus call supacudy client_block '{\"mac\":\"$LAPTOP\",\"blocked\":false}' && $IN_LAPTOP ping -c1 -W3 10.250.2.2"
 
 check "a download limit slows the laptop down" "
 	dd if=/dev/urandom of=/www/emu-limit.bin bs=1k count=300 2>/dev/null

@@ -65,7 +65,7 @@ eventually "a visitor joins the guest network and gets a guest address" \
 	"$IN_VISITOR ip -4 addr show vi0 | grep -q 'inet 192.168.201.'"
 check "the visitor appears as a guest client" \
 	"ubus call supacudy clients_list | tr -d '\n\t ' | grep -q '\"hostname\":\"Guest-Tablet\",[^}]*\"network\":\"guest\"'"
-check "the visitor can use the internet" "$IN_VISITOR ping -c1 -W3 1.1.1.1"
+check "the visitor can use the internet" "$IN_VISITOR ping -c1 -W3 10.250.2.2"
 check "the visitor can resolve names through the router" "$IN_VISITOR nslookup example.com 192.168.201.1"
 check "the visitor cannot reach the laptop on the LAN" "! $IN_VISITOR ping -c1 -W3 192.168.200.113"
 check "the visitor cannot open the admin page" \
